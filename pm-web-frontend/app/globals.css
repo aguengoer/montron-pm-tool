@@ -1,0 +1,77 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    --background: 0 0% 100%;
+    --foreground: 157 11% 10%;
+    --card: 0 0% 100%;
+    --card-foreground: 157 11% 10%;
+    --popover: 0 0% 100%;
+    --popover-foreground: 157 11% 10%;
+    --primary: 9 77% 57%;
+    --primary-foreground: 0 0% 100%;
+    --secondary: 0 1% 41%;
+    --secondary-foreground: 0 0% 100%;
+    --muted: 35 19% 93%;
+    --muted-foreground: 0 1% 41%;
+    --accent: 35 19% 93%;
+    --accent-foreground: 157 11% 10%;
+    --destructive: 0 84.2% 60.2%;
+    --destructive-foreground: 0 0% 100%;
+    --border: 0 1% 41%;
+    --input: 0 1% 41%;
+    --ring: 9 77% 57%;
+    --radius: 0.5rem;
+  }
+
+  .dark {
+    --background: 157 11% 10%;
+    --foreground: 0 0% 100%;
+    --card: 157 11% 10%;
+    --card-foreground: 0 0% 100%;
+    --popover: 157 11% 10%;
+    --popover-foreground: 0 0% 100%;
+    --primary: 9 77% 57%;
+    --primary-foreground: 0 0% 100%;
+    --secondary: 0 1% 70%;
+    --secondary-foreground: 157 11% 10%;
+    --muted: 0 0% 15%;
+    --muted-foreground: 0 1% 70%;
+    --accent: 0 0% 20%;
+    --accent-foreground: 0 0% 100%;
+    --destructive: 0 62.8% 30.6%;
+    --destructive-foreground: 0 0% 100%;
+    --border: 0 1% 30%;
+    --input: 0 1% 30%;
+    --ring: 9 77% 57%;
+  }
+}
+
+@layer base {
+  * {
+    @apply border-border;
+  }
+  body {
+    @apply bg-background text-foreground font-worksans;
+  }
+  h1,
+  h2,
+  h3,
+  h4,
+  h5,
+  h6 {
+    @apply font-saira uppercase;
+  }
+}
+
+/* Custom styles for edited values */
+.edited-value {
+  @apply text-montron-primary line-through;
+}
+
+.edit-indicator {
+  @apply h-2 w-2 rounded-full bg-montron-primary mr-2;
+}
+
