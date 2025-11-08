@@ -11,3 +11,9 @@
 9. Create Flyway baseline file `backend/src/main/resources/db/migration/V1__baseline.sql` with a placeholder comment.
 10. Run Maven formatting/validation if available (skipped if not configured) and ensure project builds compile-time (`mvn -q -DskipTests compile`).
 11. Summarize modifications, new files, and their key contents for review.
+12. Update `pom.xml` with any additional dependencies required for JWT resource server support if missing.
+13. Enhance `SecurityConfig` to configure OAuth2 resource server with JWT, method security, and custom authentication converter for roles.
+14. Create `CurrentUser` record and `CurrentUserService` to expose authenticated user context.
+15. Implement `TenantContext` and `TenantContextFilter`, wiring the filter into the security chain.
+16. Add an example secured endpoint demonstrating `@PreAuthorize` usage.
+17. Validate build (compilation) and summarize new security and tenant context components.
