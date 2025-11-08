@@ -10,4 +10,6 @@ import org.springframework.stereotype.Repository;
 public interface ValidationIssueRepository extends JpaRepository<ValidationIssueEntity, UUID> {
 
     List<ValidationIssueEntity> findByWorkday(WorkdayEntity workday);
+
+    void deleteByWorkday(WorkdayEntity workday);
 }
