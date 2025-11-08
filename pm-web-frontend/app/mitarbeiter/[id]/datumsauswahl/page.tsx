@@ -1,52 +1,94 @@
 "use client"
 
-import { useState } from "react"
-import { useRouter } from "next/navigation"
+import { useMemo, useState } from "react"
+import { useParams, useRouter } from "next/navigation"
 import { format } from "date-fns"
 import { de } from "date-fns/locale"
-import { CalendarIcon, FileText, ClipboardList, MapPin } from "lucide-react"
+import { CalendarIcon, FileText, ClipboardList, MapPin, ArrowLeft } from "lucide-react"
 
+import { useEmployee } from "@/hooks/useEmployee"
+import { useEmployeeWorkdays } from "@/hooks/useEmployeeWorkdays"
 import { Button } from "@/components/ui/button"
 import { Calendar } from "@/components/ui/calendar"
-import { Card, CardContent, CardFooter } from "@/components/ui/card"
+import { Card, CardContent, CardFooter, CardHeader } from "@/components/ui/card"
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover"
 import { Badge } from "@/components/ui/badge"
+import { Spinner } from "@/components/ui/spinner"
 
-// Beispieldaten für Mitarbeiter
-const mitarbeiter = {
-  1: { id: 1, nachname: "MEIER", vorname: "Michael", abteilung: "Technik" },
-  2: { id: 2, nachname: "SCHMIDT", vorname: "Sarah", abteilung: "Vertrieb" },
+function formatDateRange(value: Date | null | undefined) {
+  return value ? format(value, "dd.MM.yyyy", { locale: de }) : "Datum auswählen"
 }
 
-// Beispieldaten für Berichte
-const berichte = [
-  { datum: "2024-03-01", tagesberichte: 1, regiescheine: 2, streetwatch: true, status: "Freigegeben" },
-  { datum: "2024-03-02", tagesberichte: 1, regiescheine: 1, streetwatch: true, status: "Freigegeben" },
-  { datum: "2024-03-04", tagesberichte: 1, regiescheine: 0, streetwatch: true, status: "In Prüfung" },
-  { datum: "2024-03-05", tagesberichte: 1, regiescheine: 3, streetwatch: true, status: "Freigegeben" },
-  { datum: "2024-03-07", tagesberichte: 1, regiescheine: 1, streetwatch: false, status: "In Prüfung" },
-  { datum: "2024-03-08", tagesberichte: 1, regiescheine: 2, streetwatch: true, status: "Freigegeben" },
-]
+function toIsoDate(value: Date | null | undefined) {
+  return value ? value.toISOString().slice(0, 10) : ""
+}
 
-export default function Datumsauswahl({ params }: { params: { id: string } }) {
+function getStatusLabel(status: string | undefined) {
+  switch (status) {
+    case "RELEASED":
+      return "Freigegeben"
+    case "READY":
+      return "In Prüfung"
+    case "DRAFT":
+    default:
+      return "Entwurf"
+  }
+}
+
+export default function DatumsauswahlPage() {
   const router = useRouter()
-  const mitarbeiterId = Number.parseInt(params.id)
-  const mitarbeiterData = mitarbeiter[mitarbeiterId]
+  const params = useParams<{ id: string }>()
+  const employeeId = params?.id ?? ""
 
-  const [vonDatum, setVonDatum] = useState<Date | undefined>(new Date(2024, 2, 1)) // März 1, 2024
-  const [bisDatum, setBisDatum] = useState<Date | undefined>(new Date(2024, 2, 10)) // März 10, 2024
+  const today = useMemo(() => new Date(), [])
+  const initialFrom = useMemo(() => {
+    const date = new Date()
+    date.setDate(date.getDate() - 7)
+    return date
+  }, [])
 
-  // Filtern der Berichte basierend auf dem Datumsbereich
-  const filteredBerichte = berichte.filter((bericht) => {
-    const berichtDatum = new Date(bericht.datum)
-    return (!vonDatum || berichtDatum >= vonDatum) && (!bisDatum || berichtDatum <= bisDatum)
-  })
+  const [vonDatum, setVonDatum] = useState<Date | undefined>(initialFrom)
+  const [bisDatum, setBisDatum] = useState<Date | undefined>(today)
+
+  const fromIso = toIsoDate(vonDatum)
+  const toIso = toIsoDate(bisDatum)
+
+  const { data: employee } = useEmployee(employeeId)
+  const {
+    data: workdays,
+    isLoading,
+    isError,
+    refetch,
+  } = useEmployeeWorkdays({ employeeId, from: fromIso, to: toIso })
+
+  const headerTitle = useMemo(() => {
+    if (!employee) {
+      return "Mitarbeiter – DATUMSAUSWAHL"
+    }
+    const lastName = employee.lastName ? employee.lastName.toUpperCase() : ""
+    return `${lastName} ${employee.firstName ?? ""}`.trim() + " – DATUMSAUSWAHL"
+  }, [employee])
+
+  const handleFilterClick = () => {
+    refetch()
+  }
 
   return (
     <div className="container mx-auto py-8 px-4">
-      <h1 className="text-3xl font-bold mb-6 text-montron-text dark:text-white">
-        {mitarbeiterData?.nachname} {mitarbeiterData?.vorname} – DATUMSAUSWAHL
-      </h1>
+      <Card className="mb-6 border-montron-contrast/20 dark:border-montron-contrast/50 dark:bg-montron-text">
+        <CardHeader className="flex flex-row items-center gap-4">
+          <Button
+            variant="outline"
+            size="icon"
+            className="border-montron-contrast/30 text-montron-contrast dark:text-montron-extra dark:border-montron-contrast/50"
+            onClick={() => router.push("/mitarbeiter")}
+          >
+            <ArrowLeft className="h-4 w-4" />
+            <span className="sr-only">Zurück</span>
+          </Button>
+          <h1 className="text-3xl font-bold text-montron-text dark:text-white">{headerTitle}</h1>
+        </CardHeader>
+      </Card>
 
       <div className="flex flex-col md:flex-row gap-4 mb-8">
         <div>
@@ -58,7 +100,7 @@ export default function Datumsauswahl({ params }: { params: { id: string } }) {
                 className="w-full md:w-[200px] justify-start text-left border-montron-contrast/30 dark:border-montron-contrast/50 dark:text-white"
               >
                 <CalendarIcon className="mr-2 h-4 w-4 text-montron-contrast dark:text-montron-extra" />
-                {vonDatum ? format(vonDatum, "dd.MM.yyyy", { locale: de }) : <span>Datum auswählen</span>}
+                {formatDateRange(vonDatum ?? null)}
               </Button>
             </PopoverTrigger>
             <PopoverContent className="w-auto p-0 dark:bg-montron-text dark:border-montron-contrast/50">
@@ -82,7 +124,7 @@ export default function Datumsauswahl({ params }: { params: { id: string } }) {
                 className="w-full md:w-[200px] justify-start text-left border-montron-contrast/30 dark:border-montron-contrast/50 dark:text-white"
               >
                 <CalendarIcon className="mr-2 h-4 w-4 text-montron-contrast dark:text-montron-extra" />
-                {bisDatum ? format(bisDatum, "dd.MM.yyyy", { locale: de }) : <span>Datum auswählen</span>}
+                {formatDateRange(bisDatum ?? null)}
               </Button>
             </PopoverTrigger>
             <PopoverContent className="w-auto p-0 dark:bg-montron-text dark:border-montron-contrast/50">
@@ -97,63 +139,77 @@ export default function Datumsauswahl({ params }: { params: { id: string } }) {
           </Popover>
         </div>
 
-        <Button className="self-end bg-montron-primary hover:bg-montron-primary/90">Filtern</Button>
+        <Button className="self-end bg-montron-primary hover:bg-montron-primary/90" onClick={handleFilterClick}>
+          Filtern
+        </Button>
       </div>
 
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-        {filteredBerichte.map((bericht) => (
-          <Card
-            key={bericht.datum}
-            className="hover:shadow-md transition-shadow border-montron-contrast/20 dark:border-montron-contrast/50 dark:bg-montron-text"
-          >
-            <CardContent className="p-4">
-              <div className="flex justify-between items-start mb-4">
-                <h3 className="font-bold text-lg text-montron-text dark:text-white">
-                  {format(new Date(bericht.datum), "EEEE, dd.MM.yyyy", { locale: de })}
-                </h3>
-                <Badge
-                  variant={bericht.status === "Freigegeben" ? "default" : "outline"}
-                  className={
-                    bericht.status === "Freigegeben"
-                      ? "bg-montron-primary"
-                      : "border-montron-contrast/30 text-montron-contrast dark:text-montron-extra dark:border-montron-contrast/50"
-                  }
-                >
-                  {bericht.status}
-                </Badge>
-              </div>
+      {isLoading ? (
+        <div className="flex items-center gap-2 text-montron-contrast dark:text-montron-extra">
+          <Spinner className="h-4 w-4" />
+          <span>Lade Berichte…</span>
+        </div>
+      ) : isError ? (
+        <div className="text-sm text-red-500">Fehler beim Laden der Berichte. Bitte versuche es erneut.</div>
+      ) : workdays && workdays.length > 0 ? (
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+          {workdays.map((workday) => {
+            const statusLabel = getStatusLabel(workday.status)
+            const isReleased = workday.status === "RELEASED"
 
-              <div className="space-y-2">
-                <div className="flex items-center">
-                  <FileText className="h-4 w-4 mr-2 text-montron-primary" />
-                  <span className="text-montron-text dark:text-white">Tagesberichte: {bericht.tagesberichte}</span>
-                </div>
-                <div className="flex items-center">
-                  <ClipboardList className="h-4 w-4 mr-2 text-montron-primary" />
-                  <span className="text-montron-text dark:text-white">Regiescheine: {bericht.regiescheine}</span>
-                </div>
-                {bericht.streetwatch && (
-                  <div className="flex items-center">
-                    <MapPin className="h-4 w-4 mr-2 text-montron-primary" />
-                    <span className="text-montron-text dark:text-white">Streetwatch-Daten vorhanden</span>
-                  </div>
-                )}
-              </div>
-            </CardContent>
-            <CardFooter className="p-4 pt-0">
-              <Button
-                variant="outline"
-                className="w-full border-montron-contrast/30 hover:text-montron-primary hover:bg-montron-extra dark:border-montron-contrast/50 dark:hover:bg-montron-contrast/20"
-                onClick={() => router.push(`/mitarbeiter/${mitarbeiterId}/tagesdetail/${bericht.datum}`)}
+            return (
+              <Card
+                key={workday.id}
+                className="hover:shadow-md transition-shadow border-montron-contrast/20 dark:border-montron-contrast/50 dark:bg-montron-text"
               >
-                Details anzeigen
-              </Button>
-            </CardFooter>
-          </Card>
-        ))}
-      </div>
+                <CardContent className="p-4">
+                  <div className="flex justify-between items-start mb-4">
+                    <h3 className="font-bold text-lg text-montron-text dark:text-white">
+                      {format(new Date(workday.date), "EEEE, dd.MM.yyyy", { locale: de })}
+                    </h3>
+                    <Badge
+                      variant={isReleased ? "default" : "outline"}
+                      className={
+                        isReleased
+                          ? "bg-montron-primary"
+                          : "border-montron-contrast/30 text-montron-contrast dark:text-montron-extra dark:border-montron-contrast/50"
+                      }
+                    >
+                      {statusLabel}
+                    </Badge>
+                  </div>
 
-      {filteredBerichte.length === 0 && (
+                  <div className="space-y-2 text-sm">
+                    <div className="flex items-center gap-2 text-montron-text dark:text-white">
+                      <FileText className={`h-4 w-4 ${workday.hasTb ? "text-montron-primary" : "text-montron-contrast/60"}`} />
+                      {workday.hasTb ? "Tagesbericht vorhanden" : "Kein Tagesbericht"}
+                    </div>
+                    <div className="flex items-center gap-2 text-montron-text dark:text-white">
+                      <ClipboardList
+                        className={`h-4 w-4 ${workday.hasRs ? "text-montron-primary" : "text-montron-contrast/60"}`}
+                      />
+                      {workday.hasRs ? "Regieschein vorhanden" : "Kein Regieschein"}
+                    </div>
+                    <div className="flex items-center gap-2 text-montron-text dark:text-white">
+                      <MapPin className={`h-4 w-4 ${workday.hasStreetwatch ? "text-montron-primary" : "text-montron-contrast/60"}`} />
+                      {workday.hasStreetwatch ? "Streetwatch-Daten vorhanden" : "Keine Streetwatch-Daten"}
+                    </div>
+                  </div>
+                </CardContent>
+                <CardFooter className="p-4 pt-0">
+                  <Button
+                    variant="outline"
+                    className="w-full border-montron-contrast/30 hover:text-montron-primary hover:bg-montron-extra dark:border-montron-contrast/50 dark:hover:bg-montron-contrast/20"
+                    onClick={() => router.push(`/mitarbeiter/${employeeId}/tagesdetail/${workday.id}`)}
+                  >
+                    Details anzeigen
+                  </Button>
+                </CardFooter>
+              </Card>
+            )
+          })}
+        </div>
+      ) : (
         <div className="text-center py-12">
           <p className="text-montron-contrast dark:text-montron-extra">
             Keine Berichte im ausgewählten Zeitraum gefunden.
