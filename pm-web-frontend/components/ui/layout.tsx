@@ -1,12 +1,57 @@
+"use client"
+
 import type React from "react"
+import { useEffect } from "react"
 import Link from "next/link"
+import { usePathname, useRouter } from "next/navigation"
 import { Users, FileOutput, Building, Settings } from "lucide-react"
 
+import { useAuth } from "@/components/auth/auth-provider"
 import { Button } from "@/components/ui/button"
-import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip"
+import { Spinner } from "@/components/ui/spinner"
 import { ThemeToggle } from "@/components/ui/theme-toggle"
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip"
 
 export function Layout({ children }: { children: React.ReactNode }) {
+  const router = useRouter()
+  const pathname = usePathname()
+  const { isAuthenticated, loading } = useAuth()
+
+  const isLoginRoute = pathname === "/login"
+
+  useEffect(() => {
+    if (loading) return
+    if (!isLoginRoute && !isAuthenticated) {
+      router.replace("/login")
+    } else if (isLoginRoute && isAuthenticated) {
+      router.replace("/mitarbeiter")
+    }
+  }, [loading, isAuthenticated, isLoginRoute, router])
+
+  if (loading) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-white dark:bg-montron-text">
+        <Spinner className="h-10 w-10" />
+      </div>
+    )
+  }
+
+  if (isLoginRoute) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-white dark:bg-montron-text">
+        {children}
+      </div>
+    )
+  }
+
+  if (!isAuthenticated) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-white dark:bg-montron-text">
+        <Spinner className="h-10 w-10" />
+      </div>
+    )
+  }
+
   return (
     <div className="min-h-screen flex flex-col bg-white dark:bg-montron-text">
       <header className="border-b border-montron-contrast/20 dark:border-montron-contrast/40 py-2 px-4">

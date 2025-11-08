@@ -2,6 +2,7 @@ import type React from "react"
 import { Work_Sans, Saira } from "next/font/google"
 import "./globals.css"
 import { Layout } from "@/components/ui/layout"
+import { AppProviders } from "@/app/providers"
 
 const worksans = Work_Sans({
   subsets: ["latin"],
@@ -19,7 +20,7 @@ const saira = Saira({
 export const metadata = {
   title: "Mitarbeiterberichtssystem",
   description: "Verwaltung von Tagesberichten, Regiescheinen und Streetwatch-Daten",
-    generator: 'v0.app'
+  generator: "v0.app",
 }
 
 export default function RootLayout({
@@ -30,7 +31,9 @@ export default function RootLayout({
   return (
     <html lang="de">
       <body className={`${worksans.variable} ${saira.variable} font-worksans`}>
-        <Layout>{children}</Layout>
+        <AppProviders>
+          <Layout>{children}</Layout>
+        </AppProviders>
       </body>
     </html>
   )
