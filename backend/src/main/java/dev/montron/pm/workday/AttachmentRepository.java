@@ -6,4 +6,6 @@ import org.springframework.stereotype.Repository;
 
 @Repository
 public interface AttachmentRepository extends JpaRepository<AttachmentEntity, UUID> {
+
+    void deleteByWorkdayAndSourceSubmissionId(WorkdayEntity workday, UUID sourceSubmissionId);
 }
