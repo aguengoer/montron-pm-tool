@@ -1,39 +1,47 @@
 "use client"
 
-import { useState } from "react"
+import { useState, useMemo } from "react"
 import { Search, Filter, User } from "lucide-react"
 import Link from "next/link"
+import { useRouter } from "next/navigation"
 
+import { useEmployees } from "@/hooks/useEmployees"
 import { Input } from "@/components/ui/input"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Card, CardContent } from "@/components/ui/card"
+import { Spinner } from "@/components/ui/spinner"
 
-// Beispieldaten für Mitarbeiter
-const mitarbeiter = [
-  { id: 1, nachname: "MEIER", vorname: "Michael", abteilung: "Technik" },
-  { id: 2, nachname: "SCHMIDT", vorname: "Sarah", abteilung: "Vertrieb" },
-  { id: 3, nachname: "MÜLLER", vorname: "Thomas", abteilung: "Technik" },
-  { id: 4, nachname: "WAGNER", vorname: "Anna", abteilung: "Verwaltung" },
-  { id: 5, nachname: "BECKER", vorname: "Klaus", abteilung: "Technik" },
-  { id: 6, nachname: "HOFFMANN", vorname: "Julia", abteilung: "Vertrieb" },
-  { id: 7, nachname: "SCHULZ", vorname: "Peter", abteilung: "Verwaltung" },
-  { id: 8, nachname: "KOCH", vorname: "Lisa", abteilung: "Technik" },
+type DepartmentOption = {
+  label: string
+  value: string
+}
+
+const departmentOptions: DepartmentOption[] = [
+  { label: "Alle Abteilungen", value: "ALL" },
+  { label: "Technik", value: "Technik" },
+  { label: "Vertrieb", value: "Vertrieb" },
+  { label: "Verwaltung", value: "Verwaltung" },
 ]
 
 export default function MitarbeiterUebersicht() {
+  const router = useRouter()
   const [suchbegriff, setSuchbegriff] = useState("")
-  const [abteilungFilter, setAbteilungFilter] = useState("")
+  const [abteilungFilter, setAbteilungFilter] = useState<string>("ALL")
 
-  // Filtern der Mitarbeiter basierend auf Suchbegriff und Abteilung
-  const filteredMitarbeiter = mitarbeiter.filter((ma) => {
-    const matchesSearch =
-      ma.nachname.toLowerCase().includes(suchbegriff.toLowerCase()) ||
-      ma.vorname.toLowerCase().includes(suchbegriff.toLowerCase())
-
-    const matchesAbteilung = abteilungFilter === "" || ma.abteilung === abteilungFilter
-
-    return matchesSearch && matchesAbteilung
+  const { data, isLoading, isError } = useEmployees({
+    page: 0,
+    size: 50,
+    q: suchbegriff.trim() ? suchbegriff.trim() : undefined,
+    department: abteilungFilter === "ALL" ? undefined : abteilungFilter,
+    status: "ACTIVE",
   })
+
+  const employees = data?.content ?? []
+
+  const departmentValue = useMemo(
+    () => departmentOptions.find((item) => item.value === abteilungFilter)?.value ?? "ALL",
+    [abteilungFilter],
+  )
 
   return (
     <div className="container mx-auto py-8 px-4">
@@ -51,7 +59,7 @@ export default function MitarbeiterUebersicht() {
         </div>
 
         <div className="w-full md:w-64">
-          <Select value={abteilungFilter} onValueChange={setAbteilungFilter}>
+          <Select value={departmentValue} onValueChange={setAbteilungFilter}>
             <SelectTrigger className="border-montron-contrast/30 dark:border-montron-contrast/50 dark:bg-montron-text dark:text-white">
               <div className="flex items-center">
                 <Filter className="mr-2 h-4 w-4 text-montron-contrast dark:text-montron-extra" />
@@ -59,46 +67,56 @@ export default function MitarbeiterUebersicht() {
               </div>
             </SelectTrigger>
             <SelectContent className="dark:bg-montron-text dark:border-montron-contrast/50">
-              <SelectItem value="alle" className="dark:text-white">
-                Alle Abteilungen
-              </SelectItem>
-              <SelectItem value="Technik" className="dark:text-white">
-                Technik
-              </SelectItem>
-              <SelectItem value="Vertrieb" className="dark:text-white">
-                Vertrieb
-              </SelectItem>
-              <SelectItem value="Verwaltung" className="dark:text-white">
-                Verwaltung
-              </SelectItem>
+              {departmentOptions.map((option) => (
+                <SelectItem key={option.value} value={option.value} className="dark:text-white">
+                  {option.label}
+                </SelectItem>
+              ))}
             </SelectContent>
           </Select>
         </div>
       </div>
 
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
-        {filteredMitarbeiter.map((ma) => (
-          <Link key={ma.id} href={`/mitarbeiter/${ma.id}/datumsauswahl`}>
-            <Card className="hover:shadow-md transition-shadow cursor-pointer border-montron-contrast/20 hover:border-montron-primary dark:bg-montron-text dark:border-montron-contrast/50 dark:hover:border-montron-primary">
-              <CardContent className="p-4 flex items-center">
-                <div className="mr-4 flex items-center justify-center w-10 h-10 rounded-full bg-montron-extra dark:bg-montron-contrast/20">
-                  <User className="h-6 w-6 text-montron-primary" />
-                </div>
-                <div>
-                  <h3 className="font-bold text-montron-text dark:text-white">
-                    {ma.nachname} {ma.vorname.charAt(0)}.
-                  </h3>
-                  <p className="text-sm text-montron-contrast dark:text-montron-extra">{ma.abteilung}</p>
-                </div>
-              </CardContent>
-            </Card>
-          </Link>
-        ))}
-      </div>
-
-      {filteredMitarbeiter.length === 0 && (
+      {isLoading ? (
+        <div className="flex items-center gap-2 text-montron-contrast dark:text-montron-extra">
+          <Spinner className="h-4 w-4" />
+          <span>Lade Mitarbeiter…</span>
+        </div>
+      ) : isError ? (
+        <div className="text-sm text-red-500">Fehler beim Laden der Mitarbeiter. Bitte versuche es erneut.</div>
+      ) : employees.length === 0 ? (
         <div className="text-center py-12">
           <p className="text-montron-contrast dark:text-montron-extra">Keine Mitarbeiter gefunden.</p>
+        </div>
+      ) : (
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
+          {employees.map((employee) => {
+            const displayName = `${employee.lastName?.toUpperCase() ?? ""} ${
+              employee.firstName ? employee.firstName[0]?.toUpperCase() + "." : ""
+            }`
+
+            return (
+              <button
+                key={employee.id}
+                className="group rounded-xl border border-montron-contrast/20 bg-card p-4 text-left transition hover:border-montron-primary hover:shadow-md dark:border-montron-contrast/50 dark:bg-montron-text"
+                onClick={() => router.push(`/mitarbeiter/${employee.id}/datumsauswahl`)}
+              >
+                <Card className="border-0 shadow-none bg-transparent">
+                  <CardContent className="p-0 flex items-center">
+                    <div className="mr-4 flex items-center justify-center w-10 h-10 rounded-full bg-montron-extra dark:bg-montron-contrast/20">
+                      <User className="h-6 w-6 text-montron-primary" />
+                    </div>
+                    <div>
+                      <h3 className="font-bold text-montron-text dark:text-white">{displayName}</h3>
+                      <p className="text-sm text-montron-contrast dark:text-montron-extra">
+                        {employee.department ?? "Keine Abteilung"}
+                      </p>
+                    </div>
+                  </CardContent>
+                </Card>
+              </button>
+            )
+          })}
         </div>
       )}
     </div>
