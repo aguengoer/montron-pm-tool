@@ -1,9 +1,12 @@
 package dev.montron.pm.workday;
 
+import jakarta.validation.Valid;
 import java.time.LocalDate;
 import java.util.List;
 import java.util.UUID;
-import jakarta.validation.Valid;
+import org.springframework.http.HttpHeaders;
+import org.springframework.http.MediaType;
+import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PatchMapping;
@@ -21,10 +24,15 @@ public class WorkdayController {
 
     private final WorkdayService workdayService;
     private final ReleaseService releaseService;
+    private final WorkdayPdfService workdayPdfService;
 
-    public WorkdayController(WorkdayService workdayService, ReleaseService releaseService) {
+    public WorkdayController(
+            WorkdayService workdayService,
+            ReleaseService releaseService,
+            WorkdayPdfService workdayPdfService) {
         this.workdayService = workdayService;
         this.releaseService = releaseService;
+        this.workdayPdfService = workdayPdfService;
     }
 
     @GetMapping("/api/employees/{employeeId}/workdays")
@@ -53,5 +61,30 @@ public class WorkdayController {
     @PostMapping("/api/workdays/{id}/release/confirm")
     public ReleaseResponse release(@PathVariable UUID id, @Valid @RequestBody ReleaseRequest request) {
         return releaseService.releaseWorkday(id, request);
+    }
+
+    @PostMapping("/api/workdays/{id}/pdf/tb")
+    public ResponseEntity<byte[]> generateTbPdf(@PathVariable UUID id) {
+        byte[] pdf = workdayPdfService.generateTbPdfForWorkday(id);
+        return ResponseEntity.ok()
+                .contentType(MediaType.APPLICATION_PDF)
+                .header(HttpHeaders.CONTENT_DISPOSITION, "inline; filename=\"tb_" + id + ".pdf\"")
+                .body(pdf);
+    }
+
+    @PostMapping("/api/workdays/{id}/pdf/rs")
+    public ResponseEntity<byte[]> generateRsPdf(@PathVariable UUID id) {
+        byte[] pdf = workdayPdfService.generateRsPdfForWorkday(id);
+        return ResponseEntity.ok()
+                .contentType(MediaType.APPLICATION_PDF)
+                .header(HttpHeaders.CONTENT_DISPOSITION, "inline; filename=\"rs_" + id + ".pdf\"")
+                .body(pdf);
+    }
+
+    @PostMapping("/api/workdays/{id}/attachments/presign-download")
+    public AttachmentPresignResponse presignAttachments(
+            @PathVariable UUID id,
+            @RequestBody(required = false) AttachmentPresignRequest request) {
+        return workdayService.presignAttachments(id, request);
     }
 }

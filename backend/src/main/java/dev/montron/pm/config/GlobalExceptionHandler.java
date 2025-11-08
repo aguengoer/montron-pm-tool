@@ -6,11 +6,13 @@ import jakarta.validation.ConstraintViolation;
 import jakarta.validation.ConstraintViolationException;
 import java.util.List;
 import java.util.stream.Collectors;
+import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.validation.FieldError;
 import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.annotation.ControllerAdvice;
 import org.springframework.web.bind.annotation.ExceptionHandler;
+import org.springframework.web.server.ResponseStatusException;
 
 @ControllerAdvice
 public class GlobalExceptionHandler {
@@ -33,6 +35,19 @@ public class GlobalExceptionHandler {
 
         return ResponseEntity.badRequest()
                 .body(ErrorResponse.badRequest("Validation failed", errors));
+    }
+
+    @ExceptionHandler(ResponseStatusException.class)
+    public ResponseEntity<ErrorResponse> handleResponseStatus(ResponseStatusException ex) {
+        HttpStatus status = HttpStatus.resolve(ex.getStatusCode().value());
+        String title = status != null ? status.getReasonPhrase() : "Error";
+        ErrorResponse response = new ErrorResponse(
+                "about:blank",
+                title,
+                ex.getStatusCode().value(),
+                ex.getReason(),
+                List.of());
+        return ResponseEntity.status(ex.getStatusCode()).body(response);
     }
 
     private ValidationError mapConstraintViolation(ConstraintViolation<?> violation) {

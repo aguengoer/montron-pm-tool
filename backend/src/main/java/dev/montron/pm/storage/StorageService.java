@@ -65,6 +65,15 @@ public class StorageService {
         }
     }
 
+    public String generatePresignedDownloadUrl(String s3Key) {
+        if (s3Key == null || s3Key.isBlank()) {
+            throw new IllegalArgumentException("s3Key is required to generate a presigned URL");
+        }
+        String sanitizedKey = s3Key.replace(" ", "%20");
+        // TODO: integrate with real object storage presign logic
+        return "https://files.example.com/" + sanitizedKey;
+    }
+
     private String sanitize(String value) {
         return value == null ? "unknown" : value.replaceAll("[^a-zA-Z0-9._-]", "_");
     }

@@ -8,6 +8,7 @@ import dev.montron.pm.common.CurrentUser;
 import dev.montron.pm.common.CurrentUserService;
 import dev.montron.pm.common.TimeRoundingUtil;
 import dev.montron.pm.employees.EmployeeEntity;
+import dev.montron.pm.storage.StorageService;
 import dev.montron.pm.workday.validation.ValidationIssueEntity;
 import dev.montron.pm.workday.validation.ValidationIssueRepository;
 import dev.montron.pm.workday.validation.ValidationService;
@@ -15,6 +16,8 @@ import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.time.LocalTime;
 import java.util.Collections;
+import java.util.HashSet;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
@@ -41,6 +44,7 @@ public class WorkdayService {
     private final StreetwatchEntryRepository streetwatchEntryRepository;
     private final ValidationIssueRepository validationIssueRepository;
     private final ValidationService validationService;
+    private final StorageService storageService;
     private final AuditService auditService;
     private final ObjectMapper objectMapper;
 
@@ -54,6 +58,7 @@ public class WorkdayService {
             StreetwatchEntryRepository streetwatchEntryRepository,
             ValidationIssueRepository validationIssueRepository,
             ValidationService validationService,
+            StorageService storageService,
             AuditService auditService,
             ObjectMapper objectMapper) {
         this.currentUserService = currentUserService;
@@ -65,6 +70,7 @@ public class WorkdayService {
         this.streetwatchEntryRepository = streetwatchEntryRepository;
         this.validationIssueRepository = validationIssueRepository;
         this.validationService = validationService;
+        this.storageService = storageService;
         this.auditService = auditService;
         this.objectMapper = objectMapper;
     }
@@ -448,5 +454,35 @@ public class WorkdayService {
             log.warn("Failed to parse RS positions JSON: {}", json, ex);
             return Collections.emptyList();
         }
+    }
+
+    @Transactional(readOnly = true)
+    public AttachmentPresignResponse presignAttachments(UUID workdayId, AttachmentPresignRequest request) {
+        CurrentUser currentUser = currentUserService.getCurrentUser();
+        UUID companyId = currentUser.companyId();
+
+        WorkdayEntity workday = workdayRepository.findByIdAndCompanyId(workdayId, companyId)
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Workday not found"));
+
+        List<AttachmentEntity> attachments = attachmentRepository.findByWorkday(workday);
+
+        HashSet<UUID> requestedIds = null;
+        if (request != null && request.attachmentIds() != null && !request.attachmentIds().isEmpty()) {
+            requestedIds = new HashSet<>(request.attachmentIds());
+        }
+
+        LinkedHashMap<UUID, String> urls = new LinkedHashMap<>();
+        for (AttachmentEntity attachment : attachments) {
+            if (requestedIds != null && !requestedIds.contains(attachment.getId())) {
+                continue;
+            }
+            if (!StringUtils.hasText(attachment.getS3Key())) {
+                continue;
+            }
+            String url = storageService.generatePresignedDownloadUrl(attachment.getS3Key());
+            urls.put(attachment.getId(), url);
+        }
+
+        return new AttachmentPresignResponse(urls);
     }
 }
