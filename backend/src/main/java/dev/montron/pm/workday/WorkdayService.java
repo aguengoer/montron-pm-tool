@@ -1,17 +1,23 @@
 package dev.montron.pm.workday;
 
+import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import dev.montron.pm.audit.AuditService;
 import dev.montron.pm.common.CurrentUser;
 import dev.montron.pm.common.CurrentUserService;
+import dev.montron.pm.common.TimeRoundingUtil;
 import dev.montron.pm.employees.EmployeeEntity;
 import dev.montron.pm.workday.validation.ValidationIssueEntity;
 import dev.montron.pm.workday.validation.ValidationIssueRepository;
+import dev.montron.pm.workday.validation.ValidationService;
 import java.math.BigDecimal;
 import java.time.LocalDate;
+import java.time.LocalTime;
 import java.util.Collections;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.UUID;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -34,6 +40,8 @@ public class WorkdayService {
     private final StreetwatchDayRepository streetwatchDayRepository;
     private final StreetwatchEntryRepository streetwatchEntryRepository;
     private final ValidationIssueRepository validationIssueRepository;
+    private final ValidationService validationService;
+    private final AuditService auditService;
     private final ObjectMapper objectMapper;
 
     public WorkdayService(
@@ -45,6 +53,8 @@ public class WorkdayService {
             StreetwatchDayRepository streetwatchDayRepository,
             StreetwatchEntryRepository streetwatchEntryRepository,
             ValidationIssueRepository validationIssueRepository,
+            ValidationService validationService,
+            AuditService auditService,
             ObjectMapper objectMapper) {
         this.currentUserService = currentUserService;
         this.workdayRepository = workdayRepository;
@@ -54,6 +64,8 @@ public class WorkdayService {
         this.streetwatchDayRepository = streetwatchDayRepository;
         this.streetwatchEntryRepository = streetwatchEntryRepository;
         this.validationIssueRepository = validationIssueRepository;
+        this.validationService = validationService;
+        this.auditService = auditService;
         this.objectMapper = objectMapper;
     }
 
@@ -115,6 +127,211 @@ public class WorkdayService {
                 streetwatchDto,
                 attachments,
                 validationIssues);
+    }
+
+    @Transactional
+    public TbDto patchTb(UUID workdayId, TbPatchRequest request) {
+        CurrentUser user = currentUserService.getCurrentUser();
+        UUID companyId = user.companyId();
+
+        WorkdayEntity workday = workdayRepository.findByIdAndCompanyId(workdayId, companyId)
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Workday not found"));
+
+        TbEntryEntity tb = tbEntryRepository.findByWorkday(workday)
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "TB entry not found"));
+
+        boolean changed = false;
+
+        if (request.startTime() != null) {
+            LocalTime rounded = TimeRoundingUtil.roundTo15Minutes(request.startTime());
+            LocalTime oldValue = tb.getStartTime();
+            if (!Objects.equals(oldValue, rounded)) {
+                tb.setStartTime(rounded);
+                auditService.auditChange("TB", tb.getId(), "startTime", oldValue, rounded);
+                changed = true;
+            }
+        }
+
+        if (request.endTime() != null) {
+            LocalTime rounded = TimeRoundingUtil.roundTo15Minutes(request.endTime());
+            LocalTime oldValue = tb.getEndTime();
+            if (!Objects.equals(oldValue, rounded)) {
+                tb.setEndTime(rounded);
+                auditService.auditChange("TB", tb.getId(), "endTime", oldValue, rounded);
+                changed = true;
+            }
+        }
+
+        if (request.breakMinutes() != null) {
+            Integer oldValue = tb.getBreakMinutes();
+            if (!Objects.equals(oldValue, request.breakMinutes())) {
+                tb.setBreakMinutes(request.breakMinutes());
+                auditService.auditChange("TB", tb.getId(), "breakMinutes", oldValue, request.breakMinutes());
+                changed = true;
+            }
+        }
+
+        if (request.travelMinutes() != null) {
+            Integer oldValue = tb.getTravelMinutes();
+            if (!Objects.equals(oldValue, request.travelMinutes())) {
+                tb.setTravelMinutes(request.travelMinutes());
+                auditService.auditChange("TB", tb.getId(), "travelMinutes", oldValue, request.travelMinutes());
+                changed = true;
+            }
+        }
+
+        if (request.licensePlate() != null) {
+            String oldValue = tb.getLicensePlate();
+            if (!Objects.equals(oldValue, request.licensePlate())) {
+                tb.setLicensePlate(request.licensePlate());
+                auditService.auditChange("TB", tb.getId(), "licensePlate", oldValue, request.licensePlate());
+                changed = true;
+            }
+        }
+
+        if (request.department() != null) {
+            String oldValue = tb.getDepartment();
+            if (!Objects.equals(oldValue, request.department())) {
+                tb.setDepartment(request.department());
+                auditService.auditChange("TB", tb.getId(), "department", oldValue, request.department());
+                changed = true;
+            }
+        }
+
+        if (request.overnight() != null) {
+            Boolean oldValue = tb.getOvernight();
+            if (!Objects.equals(oldValue, request.overnight())) {
+                tb.setOvernight(request.overnight());
+                auditService.auditChange("TB", tb.getId(), "overnight", oldValue, request.overnight());
+                changed = true;
+            }
+        }
+
+        if (request.kmStart() != null) {
+            Integer oldValue = tb.getKmStart();
+            if (!Objects.equals(oldValue, request.kmStart())) {
+                tb.setKmStart(request.kmStart());
+                auditService.auditChange("TB", tb.getId(), "kmStart", oldValue, request.kmStart());
+                changed = true;
+            }
+        }
+
+        if (request.kmEnd() != null) {
+            Integer oldValue = tb.getKmEnd();
+            if (!Objects.equals(oldValue, request.kmEnd())) {
+                tb.setKmEnd(request.kmEnd());
+                auditService.auditChange("TB", tb.getId(), "kmEnd", oldValue, request.kmEnd());
+                changed = true;
+            }
+        }
+
+        if (request.comment() != null) {
+            String oldValue = tb.getComment();
+            if (!Objects.equals(oldValue, request.comment())) {
+                tb.setComment(request.comment());
+                auditService.auditChange("TB", tb.getId(), "comment", oldValue, request.comment());
+                changed = true;
+            }
+        }
+
+        if (request.extra() != null) {
+            Map<String, Object> oldValue = parseJsonMap(tb.getExtra());
+            Map<String, Object> newValue = request.extra();
+            if (!Objects.equals(oldValue, newValue)) {
+                tb.setExtra(writeJson(newValue));
+                auditService.auditChange("TB", tb.getId(), "extra", oldValue, newValue);
+                changed = true;
+            }
+        }
+
+        if (changed) {
+            Integer currentVersion = tb.getVersion() == null ? 0 : tb.getVersion();
+            tb.setVersion(currentVersion + 1);
+            tbEntryRepository.save(tb);
+            validationService.recalculateForWorkday(workday.getId());
+        }
+
+        return toTbDto(tb);
+    }
+
+    @Transactional
+    public RsDto patchRs(UUID workdayId, RsPatchRequest request) {
+        CurrentUser user = currentUserService.getCurrentUser();
+        UUID companyId = user.companyId();
+
+        WorkdayEntity workday = workdayRepository.findByIdAndCompanyId(workdayId, companyId)
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Workday not found"));
+
+        RsEntryEntity rs = rsEntryRepository.findByWorkday(workday)
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "RS entry not found"));
+
+        boolean changed = false;
+
+        if (request.startTime() != null) {
+            LocalTime rounded = TimeRoundingUtil.roundTo15Minutes(request.startTime());
+            LocalTime oldValue = rs.getStartTime();
+            if (!Objects.equals(oldValue, rounded)) {
+                rs.setStartTime(rounded);
+                auditService.auditChange("RS", rs.getId(), "startTime", oldValue, rounded);
+                changed = true;
+            }
+        }
+
+        if (request.endTime() != null) {
+            LocalTime rounded = TimeRoundingUtil.roundTo15Minutes(request.endTime());
+            LocalTime oldValue = rs.getEndTime();
+            if (!Objects.equals(oldValue, rounded)) {
+                rs.setEndTime(rounded);
+                auditService.auditChange("RS", rs.getId(), "endTime", oldValue, rounded);
+                changed = true;
+            }
+        }
+
+        if (request.breakMinutes() != null) {
+            Integer oldValue = rs.getBreakMinutes();
+            if (!Objects.equals(oldValue, request.breakMinutes())) {
+                rs.setBreakMinutes(request.breakMinutes());
+                auditService.auditChange("RS", rs.getId(), "breakMinutes", oldValue, request.breakMinutes());
+                changed = true;
+            }
+        }
+
+        if (request.customerId() != null) {
+            String oldValue = rs.getCustomerId();
+            if (!Objects.equals(oldValue, request.customerId())) {
+                rs.setCustomerId(request.customerId());
+                auditService.auditChange("RS", rs.getId(), "customerId", oldValue, request.customerId());
+                changed = true;
+            }
+        }
+
+        if (request.customerName() != null) {
+            String oldValue = rs.getCustomerName();
+            if (!Objects.equals(oldValue, request.customerName())) {
+                rs.setCustomerName(request.customerName());
+                auditService.auditChange("RS", rs.getId(), "customerName", oldValue, request.customerName());
+                changed = true;
+            }
+        }
+
+        if (request.positions() != null) {
+            List<RsPositionDto> oldValue = parsePositions(rs.getPositions());
+            List<RsPositionDto> newValue = request.positions();
+            if (!Objects.equals(oldValue, newValue)) {
+                rs.setPositions(writeJson(newValue));
+                auditService.auditChange("RS", rs.getId(), "positions", oldValue, newValue);
+                changed = true;
+            }
+        }
+
+        if (changed) {
+            Integer currentVersion = rs.getVersion() == null ? 0 : rs.getVersion();
+            rs.setVersion(currentVersion + 1);
+            rsEntryRepository.save(rs);
+            validationService.recalculateForWorkday(workday.getId());
+        }
+
+        return toRsDto(rs);
     }
 
     private WorkdaySummaryDto toSummaryDto(WorkdayEntity entity) {
@@ -195,6 +412,18 @@ public class WorkdayService {
                 issue.getMessage(),
                 issue.getFieldRef(),
                 delta);
+    }
+
+    private String writeJson(Object value) {
+        if (value == null) {
+            return null;
+        }
+        try {
+            return objectMapper.writeValueAsString(value);
+        } catch (JsonProcessingException e) {
+            log.warn("Failed to serialize value to JSON", e);
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Invalid payload");
+        }
     }
 
     private Map<String, Object> parseJsonMap(String json) {

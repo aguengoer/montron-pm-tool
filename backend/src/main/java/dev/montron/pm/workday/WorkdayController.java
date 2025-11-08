@@ -5,7 +5,9 @@ import java.util.List;
 import java.util.UUID;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PatchMapping;
 import org.springframework.web.bind.annotation.PathVariable;
+import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
@@ -32,5 +34,15 @@ public class WorkdayController {
     @GetMapping("/api/workdays/{id}")
     public WorkdayDetailDto getDetail(@PathVariable UUID id) {
         return workdayService.getWorkdayDetail(id);
+    }
+
+    @PatchMapping("/api/workdays/{id}/tb")
+    public TbDto patchTb(@PathVariable UUID id, @RequestBody TbPatchRequest request) {
+        return workdayService.patchTb(id, request);
+    }
+
+    @PatchMapping("/api/workdays/{id}/rs")
+    public RsDto patchRs(@PathVariable UUID id, @RequestBody RsPatchRequest request) {
+        return workdayService.patchRs(id, request);
     }
 }
