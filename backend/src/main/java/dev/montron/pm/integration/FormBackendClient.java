@@ -4,6 +4,7 @@ import java.time.Instant;
 import java.time.LocalDate;
 import java.util.List;
 import java.util.Optional;
+import java.util.UUID;
 import org.springframework.http.HttpHeaders;
 import org.springframework.security.core.Authentication;
 import org.springframework.security.core.context.SecurityContextHolder;
@@ -13,6 +14,21 @@ import org.springframework.web.reactive.function.client.WebClient;
 
 @Service
 public class FormBackendClient {
+
+    public record FormEmployeeCreateRequest(
+            String username,
+            String firstName,
+            String lastName,
+            String department,
+            String status) {
+    }
+
+    public record FormEmployeeUpdateRequest(
+            String firstName,
+            String lastName,
+            String department,
+            String status) {
+    }
 
     private final WebClient webClient;
     private final FormApiProperties properties;
@@ -75,6 +91,53 @@ public class FormBackendClient {
                 .retrieve()
                 .bodyToFlux(FormSubmissionDto.class)
                 .collectList()
+                .block();
+    }
+
+    public FormEmployeeDto createEmployeeInFormBackend(FormEmployeeCreateRequest request) {
+        return webClient.post()
+                .uri("/employees")
+                .header(HttpHeaders.AUTHORIZATION, resolveBearerToken())
+                .bodyValue(request)
+                .retrieve()
+                .bodyToMono(FormEmployeeDto.class)
+                .block();
+    }
+
+    public FormEmployeeDto updateEmployeeInFormBackend(UUID id, FormEmployeeUpdateRequest request) {
+        return webClient.put()
+                .uri("/employees/{id}", id)
+                .header(HttpHeaders.AUTHORIZATION, resolveBearerToken())
+                .bodyValue(request)
+                .retrieve()
+                .bodyToMono(FormEmployeeDto.class)
+                .block();
+    }
+
+    public void activateEmployeeInFormBackend(UUID id) {
+        webClient.post()
+                .uri("/employees/{id}/activate", id)
+                .header(HttpHeaders.AUTHORIZATION, resolveBearerToken())
+                .retrieve()
+                .toBodilessEntity()
+                .block();
+    }
+
+    public void deactivateEmployeeInFormBackend(UUID id) {
+        webClient.post()
+                .uri("/employees/{id}/deactivate", id)
+                .header(HttpHeaders.AUTHORIZATION, resolveBearerToken())
+                .retrieve()
+                .toBodilessEntity()
+                .block();
+    }
+
+    public void resetPasswordInFormBackend(UUID id) {
+        webClient.post()
+                .uri("/employees/{id}/reset-password", id)
+                .header(HttpHeaders.AUTHORIZATION, resolveBearerToken())
+                .retrieve()
+                .toBodilessEntity()
                 .block();
     }
 }
