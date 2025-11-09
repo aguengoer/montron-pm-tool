@@ -38,11 +38,11 @@ services:
     environment:
       SPRING_PROFILES_ACTIVE: dev
       DB_URL: jdbc:postgresql://postgres:5432/montron_pm
-      DB_USER: montron
-      DB_PASS: montron_dev_pass
-      FORM_API_BASE_URL: http://host.docker.internal:8080
+      DB_USER: montron_pm
+      DB_PASS: montron_pm
+      FORM_API_BASE_URL: http://host.docker.internal:8090
     ports:
-      - "8090:8090"
+      - "8080:8080"
     depends_on:
       postgres:
         condition: service_healthy
