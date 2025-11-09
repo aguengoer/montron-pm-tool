@@ -12,6 +12,8 @@ import {
   FileOutput,
   ArrowLeft,
   Info,
+  ImageIcon,
+  Paperclip,
 } from "lucide-react"
 import { useParams, useRouter } from "next/navigation"
 
@@ -19,6 +21,7 @@ import { useWorkdayDetail } from "@/hooks/useWorkdayDetail"
 import { useWorkdayLayout } from "@/hooks/useWorkdayLayout"
 import { usePatchTb } from "@/hooks/usePatchTb"
 import { usePatchRs } from "@/hooks/usePatchRs"
+import { usePresignAttachments } from "@/hooks/usePresignAttachments"
 import type {
   LayoutFieldConfig,
   TbDto,
@@ -26,6 +29,7 @@ import type {
   RsPositionDto,
   StreetwatchEntryDto,
   ValidationIssueDto,
+  AttachmentDto,
 } from "@/lib/workdayTypes"
 import type { TbPatchRequest } from "@/lib/tbPatchTypes"
 import type { RsPatchRequest } from "@/lib/rsPatchTypes"
@@ -35,6 +39,12 @@ import { Separator } from "@/components/ui/separator"
 import { Label } from "@/components/ui/label"
 import { Alert, AlertDescription } from "@/components/ui/alert"
 import { Spinner } from "@/components/ui/spinner"
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { Input } from "@/components/ui/input"
 import { Textarea } from "@/components/ui/textarea"
@@ -190,7 +200,12 @@ export default function TagesdetailPage() {
   const tb = detail?.tb ?? null
   const rs = detail?.rs ?? null
   const streetwatch = detail?.streetwatch ?? null
+  const attachments = detail?.attachments ?? []
   const validationIssues = detail?.validationIssues ?? []
+
+  const { mutateAsync: presignAttachments, isPending: isPresigning } = usePresignAttachments(workdayId)
+  const [previewUrl, setPreviewUrl] = useState<string | null>(null)
+  const [previewAttachment, setPreviewAttachment] = useState<AttachmentDto | null>(null)
 
   const issuesBySeverity = useMemo(() => {
     const errors = validationIssues.filter((issue) => issue.severity === "ERROR")
@@ -379,6 +394,32 @@ export default function TagesdetailPage() {
     } catch (error) {
       console.error("Failed to save RS", error)
       setRsSaveError("Speichern des Regiescheins ist fehlgeschlagen.")
+    }
+  }
+
+  const handlePreviewAttachment = async (attachment: AttachmentDto) => {
+    try {
+      const response = await presignAttachments({ attachmentIds: [attachment.id] })
+      const url = response.urls[attachment.id]
+      if (!url) return
+
+      const lower = attachment.filename.toLowerCase()
+      const isImage =
+        lower.endsWith(".jpg") ||
+        lower.endsWith(".jpeg") ||
+        lower.endsWith(".png") ||
+        lower.endsWith(".gif") ||
+        lower.endsWith(".webp")
+
+      if (isImage) {
+        setPreviewAttachment(attachment)
+        setPreviewUrl(url)
+        return
+      }
+
+      window.open(url, "_blank", "noopener,noreferrer")
+    } catch (error) {
+      console.error("Failed to presign attachment", error)
     }
   }
 
@@ -831,51 +872,154 @@ export default function TagesdetailPage() {
           </Card>
         </div>
 
-        <div ref={streetwatchRef}>
-          <Card
-            className={`border-montron-contrast/20 dark:border-montron-contrast/50 dark:bg-montron-text ${streetwatchHasError ? "border-red-400 dark:border-red-500" : streetwatchHasWarn ? "border-amber-400 dark:border-amber-500" : ""}`}
-            >
+        <div className="space-y-4">
+          <Card className="border-montron-contrast/20 dark:border-montron-contrast/50 dark:bg-montron-text">
             <CardHeader className="pb-3">
               <CardTitle className="flex items-center text-montron-text dark:text-white">
-                <MapPin className="h-5 w-5 mr-2 text-montron-primary" />
-                STREETWATCH
-                {streetwatchHasError && <span className="ml-2 h-2 w-2 rounded-full bg-red-500" aria-hidden />}
-                {!streetwatchHasError && streetwatchHasWarn && (
-                  <span className="ml-2 h-2 w-2 rounded-full bg-amber-400" aria-hidden />
-                )}
+                <Paperclip className="h-5 w-5 mr-2 text-montron-primary" />
+                ANHÄNGE
+                <span className="ml-2 text-xs font-normal text-montron-contrast dark:text-montron-extra">
+                  ({attachments.length})
+                </span>
               </CardTitle>
             </CardHeader>
-            <CardContent>
-              {streetwatch && streetwatch.entries && streetwatch.entries.length > 0 ? (
-                <Table>
-                  <TableHeader>
-                    <TableRow className="border-montron-contrast/20 dark:border-montron-contrast/50">
-                      {streetwatchColumns.map((column, idx) => (
-                        <TableHead key={`${column.key}-${idx}`} className="text-montron-text dark:text-white">
-                          {column.label}
-                        </TableHead>
-                      ))}
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {streetwatch.entries.map((entry: StreetwatchEntryDto, idx: number) => (
-                      <TableRow key={idx} className="border-montron-contrast/20 dark:border-montron-contrast/50">
-                        {streetwatchColumns.map((column, colIdx) => (
-                          <TableCell key={`${column.key}-${colIdx}`} className="text-montron-text dark:text-white">
-                            {toDisplayValue(getStreetwatchCell(entry, column.key))}
-                          </TableCell>
-                        ))}
-                      </TableRow>
-                    ))}
-                  </TableBody>
-                </Table>
+            <CardContent className="space-y-2">
+              {attachments.length === 0 ? (
+                <div className="text-xs text-montron-contrast dark:text-montron-extra">
+                  Keine Anhänge vorhanden.
+                </div>
               ) : (
-                <div className="text-xs text-montron-contrast dark:text-montron-extra">Keine Streetwatch-Daten verfügbar.</div>
+                attachments.map((attachment) => {
+                  const sizeKb = attachment.bytes ? Math.round(attachment.bytes / 1024) : null
+                  const lower = attachment.filename.toLowerCase()
+                  const isImage =
+                    lower.endsWith(".jpg") ||
+                    lower.endsWith(".jpeg") ||
+                    lower.endsWith(".png") ||
+                    lower.endsWith(".gif") ||
+                    lower.endsWith(".webp")
+                  const isPdf = lower.endsWith(".pdf")
+
+                  return (
+                    <div
+                      key={attachment.id}
+                      className="flex items-center justify-between rounded-md border border-montron-contrast/20 px-3 py-2 text-sm dark:border-montron-contrast/40"
+                    >
+                      <div className="flex items-center gap-2">
+                        <div className="flex h-8 w-8 items-center justify-center rounded-full bg-montron-extra/80 dark:bg-montron-contrast/40">
+                          {isImage ? (
+                            <ImageIcon className="h-4 w-4 text-montron-primary" />
+                          ) : isPdf ? (
+                            <FileText className="h-4 w-4 text-montron-primary" />
+                          ) : (
+                            <Paperclip className="h-4 w-4 text-montron-primary" />
+                          )}
+                        </div>
+                        <div className="flex flex-col">
+                          <span className="max-w-[220px] truncate font-medium text-montron-text dark:text-white">
+                            {attachment.filename}
+                          </span>
+                          <span className="text-xs text-montron-contrast dark:text-montron-extra">
+                            {sizeKb != null ? `${sizeKb} KB` : "Größe unbekannt"}
+                          </span>
+                        </div>
+                      </div>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        disabled={isPresigning}
+                        onClick={() => handlePreviewAttachment(attachment)}
+                        className="border-montron-contrast/30 hover:bg-montron-extra hover:text-montron-primary dark:border-montron-contrast/50 dark:hover:bg-montron-contrast/20"
+                      >
+                        {isImage ? "Vorschau" : isPdf ? "Öffnen" : "Download"}
+                      </Button>
+                    </div>
+                  )
+                })
               )}
             </CardContent>
           </Card>
+
+          <div ref={streetwatchRef}>
+            <Card
+              className={`border-montron-contrast/20 dark:border-montron-contrast/50 dark:bg-montron-text ${
+                streetwatchHasError
+                  ? "border-red-400 dark:border-red-500"
+                  : streetwatchHasWarn
+                  ? "border-amber-400 dark:border-amber-500"
+                  : ""
+              }`}
+            >
+              <CardHeader className="pb-3">
+                <CardTitle className="flex items-center text-montron-text dark:text-white">
+                  <MapPin className="h-5 w-5 mr-2 text-montron-primary" />
+                  STREETWATCH
+                  {streetwatchHasError && <span className="ml-2 h-2 w-2 rounded-full bg-red-500" aria-hidden />}
+                  {!streetwatchHasError && streetwatchHasWarn && (
+                    <span className="ml-2 h-2 w-2 rounded-full bg-amber-400" aria-hidden />
+                  )}
+                </CardTitle>
+              </CardHeader>
+              <CardContent>
+                {streetwatch && streetwatch.entries && streetwatch.entries.length > 0 ? (
+                  <Table>
+                    <TableHeader>
+                      <TableRow className="border-montron-contrast/20 dark:border-montron-contrast/50">
+                        {streetwatchColumns.map((column, idx) => (
+                          <TableHead key={`${column.key}-${idx}`} className="text-montron-text dark:text-white">
+                            {column.label}
+                          </TableHead>
+                        ))}
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {streetwatch.entries.map((entry: StreetwatchEntryDto, idx: number) => (
+                        <TableRow key={idx} className="border-montron-contrast/20 dark:border-montron-contrast/50">
+                          {streetwatchColumns.map((column, colIdx) => (
+                            <TableCell key={`${column.key}-${colIdx}`} className="text-montron-text dark:text-white">
+                              {toDisplayValue(getStreetwatchCell(entry, column.key))}
+                            </TableCell>
+                          ))}
+                        </TableRow>
+                      ))}
+                    </TableBody>
+                  </Table>
+                ) : (
+                  <div className="text-xs text-montron-contrast dark:text-montron-extra">Keine Streetwatch-Daten verfügbar.</div>
+                )}
+              </CardContent>
+            </Card>
+          </div>
         </div>
       </div>
+
+      <Dialog
+        open={Boolean(previewUrl)}
+        onOpenChange={(open) => {
+          if (!open) {
+            setPreviewUrl(null)
+            setPreviewAttachment(null)
+          }
+        }}
+      >
+        <DialogContent className="max-w-3xl">
+          <DialogHeader>
+            <DialogTitle className="text-montron-text dark:text-white">
+              {previewAttachment?.filename ?? "Anhang"}
+            </DialogTitle>
+          </DialogHeader>
+          <div className="mt-2 flex justify-center">
+            {previewUrl ? (
+              // eslint-disable-next-line @next/next/no-img-element
+              <img
+                src={previewUrl}
+                alt={previewAttachment?.filename ?? "Anhang"}
+                className="max-h-[70vh] max-w-full rounded-md object-contain"
+              />
+            ) : null}
+          </div>
+        </DialogContent>
+      </Dialog>
     </div>
   )
 }
