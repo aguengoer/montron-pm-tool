@@ -26,3 +26,12 @@
 5. Update RS field rendering to support edit mode using a new `RsFieldEditor`, change indicators, and strikethrough of previous values similar to TB.
 6. Make RS positions editable by introducing an `RsPositionsTable` that manages row-level updates in edit mode while preserving the read-only layout.
 7. Verify linting or targeted type-checks if feasible to ensure the new code integrates cleanly before proceeding to subsequent phases.
+
+## Frontend Task – Validation UI Enhancements
+1. Analyse `validationIssues` usage within `useWorkdayDetail` results to confirm available data for highlighting TB/RS/Streetwatch sections.
+2. Create memoized severity summaries and a `fieldIssuesMap` lookup inside the Tagesdetail page to drive badges and field-level styling.
+3. Add scroll targets (refs) for TB, RS, and Streetwatch columns plus a helper to map `fieldRef` values to labels and destinations.
+4. Render a validation summary in the header and a detailed issue list card that scrolls to the appropriate section when clicked.
+5. Update TB, RS, and Streetwatch renderers to apply error/warning highlights and indicators based on the mapped validation issues.
+6. Ensure new imports, hooks, and helpers keep TypeScript happy; adjust styling for dark mode consistency where necessary.
+7. Perform lint or targeted checks if available, noting any scaffold limitations.

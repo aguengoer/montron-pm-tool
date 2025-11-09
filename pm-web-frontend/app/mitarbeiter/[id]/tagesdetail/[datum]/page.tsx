@@ -1,6 +1,6 @@
 "use client"
 
-import { useEffect, useMemo, useState } from "react"
+import { useEffect, useMemo, useRef, useState } from "react"
 import { format } from "date-fns"
 import { de } from "date-fns/locale"
 import {
@@ -25,6 +25,7 @@ import type {
   RsDto,
   RsPositionDto,
   StreetwatchEntryDto,
+  ValidationIssueDto,
 } from "@/lib/workdayTypes"
 import type { TbPatchRequest } from "@/lib/tbPatchTypes"
 import type { RsPatchRequest } from "@/lib/rsPatchTypes"
@@ -142,6 +143,25 @@ function positionsAreDifferent(
   })
 }
 
+function getIssueLocation(fieldRef: string | null | undefined): {
+  label: string
+  target: "tb" | "rs" | "streetwatch" | "global"
+} {
+  if (!fieldRef) {
+    return { label: "Allgemein", target: "global" }
+  }
+  if (fieldRef.startsWith("tb.")) {
+    return { label: "Tagesbericht", target: "tb" }
+  }
+  if (fieldRef.startsWith("rs.")) {
+    return { label: "Regieschein", target: "rs" }
+  }
+  if (fieldRef.startsWith("streetwatch")) {
+    return { label: "Streetwatch", target: "streetwatch" }
+  }
+  return { label: "Allgemein", target: "global" }
+}
+
 export default function TagesdetailPage() {
   const router = useRouter()
   const params = useParams<{ id: string; datum: string }>()
@@ -163,9 +183,51 @@ export default function TagesdetailPage() {
   const { mutateAsync: patchTb, isPending: isSavingTb } = usePatchTb(workdayId)
   const { mutateAsync: patchRs, isPending: isSavingRs } = usePatchRs(workdayId)
 
+  const tbRef = useRef<HTMLDivElement | null>(null)
+  const rsRef = useRef<HTMLDivElement | null>(null)
+  const streetwatchRef = useRef<HTMLDivElement | null>(null)
+
   const tb = detail?.tb ?? null
   const rs = detail?.rs ?? null
   const streetwatch = detail?.streetwatch ?? null
+  const validationIssues = detail?.validationIssues ?? []
+
+  const issuesBySeverity = useMemo(() => {
+    const errors = validationIssues.filter((issue) => issue.severity === "ERROR")
+    const warns = validationIssues.filter((issue) => issue.severity === "WARN")
+    return { errors, warns }
+  }, [validationIssues])
+
+  const fieldIssuesMap = useMemo(() => {
+    const map = new Map<string, { errors: ValidationIssueDto[]; warns: ValidationIssueDto[] }>()
+    for (const issue of validationIssues) {
+      const ref = issue.fieldRef ?? "_global"
+      if (!map.has(ref)) {
+        map.set(ref, { errors: [], warns: [] })
+      }
+      const bucket = map.get(ref)!
+      if (issue.severity === "ERROR") {
+        bucket.errors.push(issue)
+      } else if (issue.severity === "WARN") {
+        bucket.warns.push(issue)
+      }
+    }
+    return map
+  }, [validationIssues])
+
+  const scrollToIssue = (issue: ValidationIssueDto) => {
+    const location = getIssueLocation(issue.fieldRef)
+    let ref: typeof tbRef | null = null
+    if (location.target === "tb") ref = tbRef
+    else if (location.target === "rs") ref = rsRef
+    else if (location.target === "streetwatch") ref = streetwatchRef
+
+    if (ref?.current) {
+      ref.current.scrollIntoView({ behavior: "smooth", block: "start" })
+    } else {
+      window.scrollTo({ top: 0, behavior: "smooth" })
+    }
+  }
 
   useEffect(() => {
     if (tb) {
@@ -354,22 +416,61 @@ export default function TagesdetailPage() {
   const hasTb = Boolean(tbDraft)
   const hasRs = Boolean(rsDraft)
   const rsPositionsChanged = editMode && rs && rsDraft ? positionsAreDifferent(rs.positions, rsDraft.positions) : false
+  const errorCount = issuesBySeverity.errors.length
+  const warnCount = issuesBySeverity.warns.length
+  const streetwatchIssues =
+    fieldIssuesMap.get("streetwatch") ||
+    fieldIssuesMap.get("streetwatch.entries") ||
+    fieldIssuesMap.get("streetwatch.timeRange") ||
+    { errors: [], warns: [] }
+  const streetwatchHasError = streetwatchIssues.errors.length > 0
+  const streetwatchHasWarn = !streetwatchHasError && streetwatchIssues.warns.length > 0
+  const rsPositionsIssues = fieldIssuesMap.get("rs.positions")
+  const rsPositionsHasErrorIssue = Boolean(rsPositionsIssues?.errors.length)
+  const rsPositionsHasWarnIssue = !rsPositionsHasErrorIssue && Boolean(rsPositionsIssues?.warns.length)
+  const rsPositionsBorderClass = rsPositionsHasErrorIssue
+    ? "border-red-400 dark:border-red-500"
+    : rsPositionsHasWarnIssue
+    ? "border-amber-400 dark:border-amber-500"
+    : "border-transparent"
+  const rsPositionsBgClass = rsPositionsHasErrorIssue
+    ? "bg-red-50/60 dark:bg-red-900/10"
+    : rsPositionsHasWarnIssue
+    ? "bg-amber-50/60 dark:bg-amber-900/5"
+    : ""
 
   return (
     <div className="container mx-auto py-8 px-4">
-      <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 mb-6">
-        <div className="flex items-center">
-          <Button
-            variant="outline"
-            size="icon"
-            className="border-montron-contrast/30 hover:bg-montron-extra hover:text-montron-primary dark:border-montron-contrast/50 dark:hover:bg-montron-contrast/20"
-            onClick={() => router.push(`/mitarbeiter/${employeeId}/datumsauswahl`)}
-          >
-            <ArrowLeft className="h-4 w-4" />
-          </Button>
-          <h1 className="text-3xl font-bold text-montron-text dark:text-white ml-4">
-            {employeeName} – {formattedDate}
-          </h1>
+      <div className="mb-6 flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+        <div className="flex flex-col gap-2">
+          <div className="flex items-center">
+            <Button
+              variant="outline"
+              size="icon"
+              className="border-montron-contrast/30 hover:bg-montron-extra hover:text-montron-primary dark:border-montron-contrast/50 dark:hover:bg-montron-contrast/20"
+              onClick={() => router.push(`/mitarbeiter/${employeeId}/datumsauswahl`)}
+            >
+              <ArrowLeft className="h-4 w-4" />
+            </Button>
+            <h1 className="ml-4 text-3xl font-bold text-montron-text dark:text-white">
+              {employeeName} – {formattedDate}
+            </h1>
+          </div>
+
+          {(errorCount > 0 || warnCount > 0) && (
+            <div className="flex flex-wrap items-center gap-2 pl-12">
+              {errorCount > 0 && (
+                <span className="inline-flex items-center rounded-full bg-red-100 px-2 py-1 text-xs font-medium text-red-700 dark:bg-red-900/40 dark:text-red-200">
+                  {errorCount} Fehler
+                </span>
+              )}
+              {warnCount > 0 && (
+                <span className="inline-flex items-center rounded-full bg-amber-100 px-2 py-1 text-xs font-medium text-amber-700 dark:bg-amber-900/40 dark:text-amber-200">
+                  {warnCount} Warnungen
+                </span>
+              )}
+            </div>
+          )}
         </div>
 
         <div className="flex flex-wrap gap-2">
@@ -408,6 +509,43 @@ export default function TagesdetailPage() {
         </div>
       </div>
 
+      {validationIssues.length > 0 && (
+        <Card className="mb-4 border-amber-200/60 bg-amber-50/60 dark:border-amber-700/60 dark:bg-amber-900/10">
+          <CardHeader className="pb-2">
+            <CardTitle className="flex items-center text-sm font-semibold text-montron-text dark:text-white">
+              <Info className="mr-2 h-4 w-4 text-amber-500" />
+              Prüfhinweise & Validierungen
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-1 text-xs">
+            {validationIssues.map((issue) => {
+              const location = getIssueLocation(issue.fieldRef)
+              const isError = issue.severity === "ERROR"
+              const severityLabel = isError ? "Fehler" : "Warnung"
+
+              return (
+                <button
+                  key={issue.id}
+                  type="button"
+                  onClick={() => scrollToIssue(issue)}
+                  className="flex w-full items-start gap-2 rounded-md px-2 py-1 text-left hover:bg-amber-100/60 dark:hover:bg-amber-800/40"
+                >
+                  <span
+                    className={`mt-[3px] inline-flex h-2 w-2 rounded-full ${
+                      isError ? "bg-red-500" : "bg-amber-400"
+                    }`}
+                  />
+                  <span className="flex-1">
+                    <span className="mr-1 font-semibold">[{severityLabel}] {location.label}:</span>
+                    <span>{issue.message}</span>
+                  </span>
+                </button>
+              )
+            })}
+          </CardContent>
+        </Card>
+      )}
+
       <Alert className="mb-6 border-montron-primary/20 bg-montron-extra dark:bg-montron-contrast/20 dark:border-montron-primary/30">
         <Info className="h-4 w-4 text-montron-primary" />
         <AlertDescription className="text-montron-text dark:text-white">
@@ -417,153 +555,74 @@ export default function TagesdetailPage() {
 
       {saveError && <div className="mb-4 text-sm text-red-500">{saveError}</div>}
 
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        <Card className="border-montron-contrast/20 dark:border-montron-contrast/50 dark:bg-montron-text">
-          <CardHeader className="pb-3">
-            <CardTitle className="flex items-center text-montron-text dark:text-white">
-              <FileText className="h-5 w-5 mr-2 text-montron-primary" />
-              TAGESBERICHT
-            </CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="space-y-4">
-              {!hasTb && <div className="text-xs text-montron-contrast dark:text-montron-extra">Kein Tagesbericht vorhanden.</div>}
-              {hasTb && tbFields.length === 0 && (
-                <div className="text-xs text-montron-contrast dark:text-montron-extra">Kein Layout für TB konfiguriert.</div>
-              )}
-              {hasTb && tbFields.map((field) => {
-                const originalValue = getTbFieldValue(tb, field.key)
-                const draftValue = getTbFieldValue(tbDraft, field.key)
-                const hasChanged = editMode && tb && tbDraft && originalValue !== draftValue
-
-                return (
-                  <div key={field.key} className="grid gap-2">
-                    <div className="flex items-center justify-between">
-                      <Label className="text-xs font-medium text-montron-contrast dark:text-montron-extra">
-                        {field.label}
-                      </Label>
-                      {hasChanged && <span className="ml-2 h-2 w-2 rounded-full bg-montron-primary" aria-hidden />}
-                    </div>
-
-                    {!editMode && (
-                      <div className="text-sm text-montron-text dark:text-white">{toDisplayValue(originalValue)}</div>
-                    )}
-
-                    {editMode && tbDraft && (
-                      <>
-                        <TbFieldEditor
-                          field={field}
-                          value={draftValue}
-                          onChange={(newValue) => {
-                            setTbDraft((prev) => {
-                              if (!prev) return prev
-                              const next: TbDto = {
-                                ...prev,
-                                extra: prev.extra ? { ...prev.extra } : null,
-                              }
-                              switch (field.key) {
-                                case "startTime":
-                                  next.startTime = (newValue as string) || null
-                                  break
-                                case "endTime":
-                                  next.endTime = (newValue as string) || null
-                                  break
-                                case "breakMinutes":
-                                  next.breakMinutes = newValue === "" || newValue === null ? null : Number(newValue)
-                                  break
-                                case "travelMinutes":
-                                  next.travelMinutes = newValue === "" || newValue === null ? null : Number(newValue)
-                                  break
-                                case "licensePlate":
-                                  next.licensePlate = (newValue as string) ?? null
-                                  break
-                                case "department":
-                                  next.department = (newValue as string) ?? null
-                                  break
-                                case "overnight":
-                                  next.overnight = Boolean(newValue)
-                                  break
-                                case "kmStart":
-                                  next.kmStart = newValue === "" || newValue === null ? null : Number(newValue)
-                                  break
-                                case "kmEnd":
-                                  next.kmEnd = newValue === "" || newValue === null ? null : Number(newValue)
-                                  break
-                                case "comment":
-                                  next.comment = (newValue as string) ?? null
-                                  break
-                                default: {
-                                  const extra = { ...(next.extra ?? {}) }
-                                  extra[field.key] = newValue
-                                  next.extra = extra
-                                }
-                              }
-                              return next
-                            })
-                          }}
-                        />
-                        {hasChanged && (
-                          <div className="text-xs text-montron-primary line-through opacity-70">
-                            {toDisplayValue(originalValue)}
-                          </div>
-                        )}
-                        <Separator className="bg-montron-contrast/10 dark:bg-montron-contrast/40" />
-                      </>
-                    )}
-                  </div>
-                )
-              })}
-            </div>
-          </CardContent>
-        </Card>
-
-        <Card className="border-montron-contrast/20 dark:border-montron-contrast/50 dark:bg-montron-text">
-          <CardHeader className="pb-3">
-            <CardTitle className="flex items-center text-montron-text dark:text-white">
-              <ClipboardList className="h-5 w-5 mr-2 text-montron-primary" />
-              REGIESCHEINE
-            </CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-4">
-            {!hasRs && (
-              <div className="text-xs text-montron-contrast dark:text-montron-extra">Kein Regieschein vorhanden.</div>
-            )}
-
-            {hasRs && rsDraft && (
+      <div className="grid grid-cols-1 gap-6 lg:grid-cols-3">
+        <div ref={tbRef}>
+          <Card className="border-montron-contrast/20 dark:border-montron-contrast/50 dark:bg-montron-text">
+            <CardHeader className="pb-3">
+              <CardTitle className="flex items-center text-montron-text dark:text-white">
+                <FileText className="h-5 w-5 mr-2 text-montron-primary" />
+                TAGESBERICHT
+              </CardTitle>
+            </CardHeader>
+            <CardContent>
               <div className="space-y-4">
-                {rsFields.length === 0 && (
-                  <div className="text-xs text-montron-contrast dark:text-montron-extra">Kein Layout für RS konfiguriert.</div>
+                {!hasTb && (<div className="text-xs text-montron-contrast dark:text-montron-extra">Kein Tagesbericht vorhanden.</div>)}
+                {hasTb && tbFields.length === 0 && (
+                  <div className="text-xs text-montron-contrast dark:text-montron-extra">Kein Layout für TB konfiguriert.</div>
                 )}
+                {hasTb && tbFields.map((field) => {
+                  const fieldRef = `tb.${field.key}`
+                  const issuesForField = fieldIssuesMap.get(fieldRef)
+                  const hasErrorIssue = Boolean(issuesForField?.errors.length)
+                  const hasWarnIssue = !hasErrorIssue && Boolean(issuesForField?.warns.length)
+                  const originalValue = getTbFieldValue(tb, field.key)
+                  const draftValue = getTbFieldValue(tbDraft, field.key)
+                  const hasChanged = editMode && tb && tbDraft && originalValue !== draftValue
 
-                {rsFields.map((field) => {
-                  const originalValue = getRsFieldValue(rs, field.key)
-                  const draftValue = getRsFieldValue(rsDraft, field.key)
-                  const hasChanged = editMode && rs && rsDraft && originalValue !== draftValue
+                  const highlightBorderClass = hasErrorIssue
+                    ? "border-red-400 dark:border-red-500"
+                    : hasWarnIssue
+                    ? "border-amber-400 dark:border-amber-500"
+                    : "border-transparent"
+                  const highlightBgClass = hasErrorIssue
+                    ? "bg-red-50/60 dark:bg-red-900/10"
+                    : hasWarnIssue
+                    ? "bg-amber-50/60 dark:bg-amber-900/5"
+                    : ""
 
                   return (
-                    <div key={field.key} className="grid gap-2">
+                    <div
+                      key={field.key}
+                      className={`grid gap-2 rounded-md border-l-4 pl-3 pr-2 py-2 ${highlightBorderClass} ${highlightBgClass}`}
+                    >
                       <div className="flex items-center justify-between">
                         <Label className="text-xs font-medium text-montron-contrast dark:text-montron-extra">
                           {field.label}
                         </Label>
-                        {hasChanged && <span className="ml-2 h-2 w-2 rounded-full bg-montron-primary" aria-hidden />}
+                        <div className="flex items-center gap-1">
+                          {hasErrorIssue && <span className="h-2 w-2 rounded-full bg-red-500" aria-hidden />}
+                          {!hasErrorIssue && hasWarnIssue && (
+                            <span className="h-2 w-2 rounded-full bg-amber-400" aria-hidden />
+                          )}
+                          {hasChanged && <span className="h-2 w-2 rounded-full bg-montron-primary" aria-hidden />}
+                        </div>
                       </div>
 
                       {!editMode && (
                         <div className="text-sm text-montron-text dark:text-white">{toDisplayValue(originalValue)}</div>
                       )}
 
-                      {editMode && (
+                      {editMode && tbDraft && (
                         <>
-                          <RsFieldEditor
+                          <TbFieldEditor
                             field={field}
                             value={draftValue}
                             onChange={(newValue) => {
-                              setRsDraft((prev) => {
+                              setTbDraft((prev) => {
                                 if (!prev) return prev
-                                const next: RsDto = {
+                                const next: TbDto = {
                                   ...prev,
-                                  positions: prev.positions ? prev.positions.map((position) => ({ ...position })) : [],
+                                  extra: prev.extra ? { ...prev.extra } : null,
                                 }
                                 switch (field.key) {
                                   case "startTime":
@@ -575,14 +634,32 @@ export default function TagesdetailPage() {
                                   case "breakMinutes":
                                     next.breakMinutes = newValue === "" || newValue === null ? null : Number(newValue)
                                     break
-                                  case "customerName":
-                                    next.customerName = (newValue as string) ?? null
+                                  case "travelMinutes":
+                                    next.travelMinutes = newValue === "" || newValue === null ? null : Number(newValue)
                                     break
-                                  case "customerId":
-                                    next.customerId = (newValue as string) ?? null
+                                  case "licensePlate":
+                                    next.licensePlate = (newValue as string) ?? null
                                     break
-                                  default:
+                                  case "department":
+                                    next.department = (newValue as string) ?? null
                                     break
+                                  case "overnight":
+                                    next.overnight = Boolean(newValue)
+                                    break
+                                  case "kmStart":
+                                    next.kmStart = newValue === "" || newValue === null ? null : Number(newValue)
+                                    break
+                                  case "kmEnd":
+                                    next.kmEnd = newValue === "" || newValue === null ? null : Number(newValue)
+                                    break
+                                  case "comment":
+                                    next.comment = (newValue as string) ?? null
+                                    break
+                                  default: {
+                                    const extra = { ...(next.extra ?? {}) }
+                                    extra[field.key] = newValue
+                                    next.extra = extra
+                                  }
                                 }
                                 return next
                               })
@@ -599,78 +676,205 @@ export default function TagesdetailPage() {
                     </div>
                   )
                 })}
-
-                <div>
-                  <div className="flex items-center justify-between mb-2">
-                    <h4 className="text-sm font-medium text-montron-text dark:text-white">Positionen</h4>
-                    {editMode && rsPositionsChanged && (
-                      <span className="ml-2 h-2 w-2 rounded-full bg-montron-primary" aria-hidden />
-                    )}
-                  </div>
-                  <RsPositionsTable
-                    positions={rsDraft.positions ?? []}
-                    editMode={editMode}
-                    onChange={(nextPositions) => {
-                      setRsDraft((prev) => (prev ? { ...prev, positions: nextPositions } : prev))
-                    }}
-                  />
-                </div>
-
-                {editMode && (
-                  <div className="flex flex-wrap items-center justify-end gap-2 pt-2">
-                    {rsSaveError && <div className="text-xs text-red-500">{rsSaveError}</div>}
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      onClick={() => void handleSaveRs()}
-                      disabled={isSavingRs}
-                      className="border-montron-contrast/30 hover:bg-montron-extra hover:text-montron-primary dark:border-montron-contrast/50 dark:hover:bg-montron-contrast/20"
-                    >
-                      {isSavingRs ? "Speichern…" : "RS speichern"}
-                    </Button>
-                  </div>
-                )}
               </div>
-            )}
-          </CardContent>
-        </Card>
+            </CardContent>
+          </Card>
+        </div>
 
-        <Card className="border-montron-contrast/20 dark:border-montron-contrast/50 dark:bg-montron-text">
-          <CardHeader className="pb-3">
-            <CardTitle className="flex items-center text-montron-text dark:text-white">
-              <MapPin className="h-5 w-5 mr-2 text-montron-primary" />
-              STREETWATCH
-            </CardTitle>
-          </CardHeader>
-          <CardContent>
-            {streetwatch && streetwatch.entries && streetwatch.entries.length > 0 ? (
-              <Table>
-                <TableHeader>
-                  <TableRow className="border-montron-contrast/20 dark:border-montron-contrast/50">
-                    {streetwatchColumns.map((column, idx) => (
-                      <TableHead key={`${column.key}-${idx}`} className="text-montron-text dark:text-white">
-                        {column.label}
-                      </TableHead>
-                    ))}
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {streetwatch.entries.map((entry: StreetwatchEntryDto, idx: number) => (
-                    <TableRow key={idx} className="border-montron-contrast/20 dark:border-montron-contrast/50">
-                      {streetwatchColumns.map((column, colIdx) => (
-                        <TableCell key={`${column.key}-${colIdx}`} className="text-montron-text dark:text-white">
-                          {toDisplayValue(getStreetwatchCell(entry, column.key))}
-                        </TableCell>
+        <div ref={rsRef}>
+          <Card className="border-montron-contrast/20 dark:border-montron-contrast/50 dark:bg-montron-text">
+            <CardHeader className="pb-3">
+              <CardTitle className="flex items-center text-montron-text dark:text-white">
+                <ClipboardList className="h-5 w-5 mr-2 text-montron-primary" />
+                REGIESCHEINE
+              </CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              {!hasRs && (<div className="text-xs text-montron-contrast dark:text-montron-extra">Kein Regieschein vorhanden.</div>)}
+
+              {hasRs && rsDraft && (
+                <div className="space-y-4">
+                  {rsFields.length === 0 && (
+                    <div className="text-xs text-montron-contrast dark:text-montron-extra">Kein Layout für RS konfiguriert.</div>
+                  )}
+
+                  {rsFields.map((field) => {
+                    const fieldRef = `rs.${field.key}`
+                    const issuesForField = fieldIssuesMap.get(fieldRef)
+                    const hasErrorIssue = Boolean(issuesForField?.errors.length)
+                    const hasWarnIssue = !hasErrorIssue && Boolean(issuesForField?.warns.length)
+                    const originalValue = getRsFieldValue(rs, field.key)
+                    const draftValue = getRsFieldValue(rsDraft, field.key)
+                    const hasChanged = editMode && rs && rsDraft && originalValue !== draftValue
+
+                    const highlightBorderClass = hasErrorIssue
+                      ? "border-red-400 dark:border-red-500"
+                      : hasWarnIssue
+                      ? "border-amber-400 dark:border-amber-500"
+                      : "border-transparent"
+                    const highlightBgClass = hasErrorIssue
+                      ? "bg-red-50/60 dark:bg-red-900/10"
+                      : hasWarnIssue
+                      ? "bg-amber-50/60 dark:bg-amber-900/5"
+                      : ""
+
+                    return (
+                      <div
+                        key={field.key}
+                        className={`grid gap-2 rounded-md border-l-4 pl-3 pr-2 py-2 ${highlightBorderClass} ${highlightBgClass}`}
+                      >
+                        <div className="flex items-center justify-between">
+                          <Label className="text-xs font-medium text-montron-contrast dark:text-montron-extra">
+                            {field.label}
+                          </Label>
+                          <div className="flex items-center gap-1">
+                            {hasErrorIssue && <span className="h-2 w-2 rounded-full bg-red-500" aria-hidden />}
+                            {!hasErrorIssue && hasWarnIssue && (
+                              <span className="h-2 w-2 rounded-full bg-amber-400" aria-hidden />
+                            )}
+                            {hasChanged && <span className="h-2 w-2 rounded-full bg-montron-primary" aria-hidden />}
+                          </div>
+                        </div>
+
+                        {!editMode && (
+                          <div className="text-sm text-montron-text dark:text-white">{toDisplayValue(originalValue)}</div>
+                        )}
+
+                        {editMode && (
+                          <>
+                            <RsFieldEditor
+                              field={field}
+                              value={draftValue}
+                              onChange={(newValue) => {
+                                setRsDraft((prev) => {
+                                  if (!prev) return prev
+                                  const next: RsDto = {
+                                    ...prev,
+                                    positions: prev.positions ? prev.positions.map((position) => ({ ...position })) : [],
+                                  }
+                                  switch (field.key) {
+                                    case "startTime":
+                                      next.startTime = (newValue as string) || null
+                                      break
+                                    case "endTime":
+                                      next.endTime = (newValue as string) || null
+                                      break
+                                    case "breakMinutes":
+                                      next.breakMinutes = newValue === "" || newValue === null ? null : Number(newValue)
+                                      break
+                                    case "customerName":
+                                      next.customerName = (newValue as string) ?? null
+                                      break
+                                    case "customerId":
+                                      next.customerId = (newValue as string) ?? null
+                                      break
+                                    default:
+                                      break
+                                  }
+                                  return next
+                                })
+                              }}
+                            />
+                            {hasChanged && (
+                              <div className="text-xs text-montron-primary line-through opacity-70">
+                                {toDisplayValue(originalValue)}
+                              </div>
+                            )}
+                            <Separator className="bg-montron-contrast/10 dark:bg-montron-contrast/40" />
+                          </>
+                        )}
+                      </div>
+                    )
+                  })}
+
+                  <div
+                    className={`rounded-md border-l-4 px-3 py-3 ${rsPositionsBorderClass} ${rsPositionsBgClass}`}
+                  >
+                    <div className="mb-2 flex items-center justify-between">
+                      <h4 className="text-sm font-medium text-montron-text dark:text-white">Positionen</h4>
+                      <div className="flex items-center gap-1">
+                        {rsPositionsHasErrorIssue && <span className="h-2 w-2 rounded-full bg-red-500" aria-hidden />}
+                        {!rsPositionsHasErrorIssue && rsPositionsHasWarnIssue && (
+                          <span className="h-2 w-2 rounded-full bg-amber-400" aria-hidden />
+                        )}
+                        {editMode && rsPositionsChanged && (
+                          <span className="h-2 w-2 rounded-full bg-montron-primary" aria-hidden />
+                        )}
+                      </div>
+                    </div>
+                    <RsPositionsTable
+                      positions={rsDraft.positions ?? []}
+                      editMode={editMode}
+                      onChange={(nextPositions) => {
+                        setRsDraft((prev) => (prev ? { ...prev, positions: nextPositions } : prev))
+                      }}
+                    />
+                  </div>
+
+                  {editMode && (
+                    <div className="flex flex-wrap items-center justify-end gap-2 pt-2">
+                      {rsSaveError && <div className="text-xs text-red-500">{rsSaveError}</div>}
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => void handleSaveRs()}
+                        disabled={isSavingRs}
+                        className="border-montron-contrast/30 hover:bg-montron-extra hover:text-montron-primary dark:border-montron-contrast/50 dark:hover:bg-montron-contrast/20"
+                      >
+                        {isSavingRs ? "Speichern…" : "RS speichern"}
+                      </Button>
+                    </div>
+                  )}
+                </div>
+              )}
+            </CardContent>
+          </Card>
+        </div>
+
+        <div ref={streetwatchRef}>
+          <Card
+            className={`border-montron-contrast/20 dark:border-montron-contrast/50 dark:bg-montron-text ${streetwatchHasError ? "border-red-400 dark:border-red-500" : streetwatchHasWarn ? "border-amber-400 dark:border-amber-500" : ""}`}
+            >
+            <CardHeader className="pb-3">
+              <CardTitle className="flex items-center text-montron-text dark:text-white">
+                <MapPin className="h-5 w-5 mr-2 text-montron-primary" />
+                STREETWATCH
+                {streetwatchHasError && <span className="ml-2 h-2 w-2 rounded-full bg-red-500" aria-hidden />}
+                {!streetwatchHasError && streetwatchHasWarn && (
+                  <span className="ml-2 h-2 w-2 rounded-full bg-amber-400" aria-hidden />
+                )}
+              </CardTitle>
+            </CardHeader>
+            <CardContent>
+              {streetwatch && streetwatch.entries && streetwatch.entries.length > 0 ? (
+                <Table>
+                  <TableHeader>
+                    <TableRow className="border-montron-contrast/20 dark:border-montron-contrast/50">
+                      {streetwatchColumns.map((column, idx) => (
+                        <TableHead key={`${column.key}-${idx}`} className="text-montron-text dark:text-white">
+                          {column.label}
+                        </TableHead>
                       ))}
                     </TableRow>
-                  ))}
-                </TableBody>
-              </Table>
-            ) : (
-              <div className="text-xs text-montron-contrast dark:text-montron-extra">Keine Streetwatch-Daten verfügbar.</div>
-            )}
-          </CardContent>
-        </Card>
+                  </TableHeader>
+                  <TableBody>
+                    {streetwatch.entries.map((entry: StreetwatchEntryDto, idx: number) => (
+                      <TableRow key={idx} className="border-montron-contrast/20 dark:border-montron-contrast/50">
+                        {streetwatchColumns.map((column, colIdx) => (
+                          <TableCell key={`${column.key}-${colIdx}`} className="text-montron-text dark:text-white">
+                            {toDisplayValue(getStreetwatchCell(entry, column.key))}
+                          </TableCell>
+                        ))}
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+              ) : (
+                <div className="text-xs text-montron-contrast dark:text-montron-extra">Keine Streetwatch-Daten verfügbar.</div>
+              )}
+            </CardContent>
+          </Card>
+        </div>
       </div>
     </div>
   )
