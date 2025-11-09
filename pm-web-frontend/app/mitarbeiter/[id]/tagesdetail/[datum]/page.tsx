@@ -22,6 +22,8 @@ import { useWorkdayLayout } from "@/hooks/useWorkdayLayout"
 import { usePatchTb } from "@/hooks/usePatchTb"
 import { usePatchRs } from "@/hooks/usePatchRs"
 import { usePresignAttachments } from "@/hooks/usePresignAttachments"
+import { useRequestReleasePin, useConfirmRelease } from "@/hooks/useReleaseWorkday"
+import { useGeneratePdf } from "@/hooks/useGeneratePdf"
 import type {
   LayoutFieldConfig,
   TbDto,
@@ -230,6 +232,19 @@ export default function TagesdetailPage() {
     return map
   }, [validationIssues])
 
+  const status = detail?.status ?? "DRAFT"
+  const { errors: errorIssues } = issuesBySeverity
+  const hasBlockingErrors = errorIssues.length > 0
+
+  const [releaseDialogOpen, setReleaseDialogOpen] = useState(false)
+  const [releasePin, setReleasePin] = useState("")
+  const [releaseError, setReleaseError] = useState<string | null>(null)
+  const [pinRequested, setPinRequested] = useState(false)
+
+  const { mutateAsync: requestPin, isPending: isRequestingPin } = useRequestReleasePin(workdayId)
+  const { mutateAsync: confirmRelease, isPending: isConfirmingRelease } = useConfirmRelease(workdayId)
+  const { mutateAsync: generatePdf, isPending: isGeneratingPdf } = useGeneratePdf(workdayId)
+
   const scrollToIssue = (issue: ValidationIssueDto) => {
     const location = getIssueLocation(issue.fieldRef)
     let ref: typeof tbRef | null = null
@@ -423,14 +438,74 @@ export default function TagesdetailPage() {
     }
   }
 
-  const handlePdfExport = () => {
-    if (!detail) return
-    const employeeName = `${detail.employee.lastName ?? ""}_${detail.employee.firstName ?? ""}`.replace(/\s+/g, "_")
-    alert(`PDFs werden generiert: TB_${detail.date}_${employeeName}.pdf`)
+    const handleOpenReleaseDialog = async () => {
+    setReleaseError(null)
+    setReleasePin("")
+
+    if (status === "RELEASED") {
+      setReleaseDialogOpen(true)
+      return
+    }
+
+    if (hasBlockingErrors) {
+      setReleaseDialogOpen(true)
+      return
+    }
+
+    setReleaseDialogOpen(true)
+    setReleasePin("")
+
+    if (!pinRequested) {
+      try {
+        await requestPin()
+        setPinRequested(true)
+      } catch (error) {
+        console.error("Failed to request release PIN", error)
+        setReleaseError("PIN konnte nicht angefordert werden. Bitte später erneut versuchen.")
+      }
+    }
   }
 
-  const handleRelease = () => {
-    alert("Freigabe erfolgt (nur UI, keine API in diesem Schritt)")
+  const handleConfirmRelease = async () => {
+    setReleaseError(null)
+
+    const trimmedPin = releasePin.trim()
+
+    if (!trimmedPin) {
+      setReleaseError("Bitte PIN eingeben.")
+      return
+    }
+
+    try {
+      await confirmRelease({ pin: trimmedPin })
+      setEditMode(false)
+      setReleaseDialogOpen(false)
+    } catch (error) {
+      console.error("Failed to confirm release", error)
+      setReleaseError("Freigabe fehlgeschlagen. Bitte PIN prüfen.")
+    }
+  }
+
+  const handleGenerateTbPdf = async () => {
+    try {
+      const { url } = await generatePdf({ kind: "tb" })
+      if (url) {
+        window.open(url, "_blank", "noopener,noreferrer")
+      }
+    } catch (error) {
+      console.error("Failed to generate TB PDF", error)
+    }
+  }
+
+  const handleGenerateRsPdf = async () => {
+    try {
+      const { url } = await generatePdf({ kind: "rs" })
+      if (url) {
+        window.open(url, "_blank", "noopener,noreferrer")
+      }
+    } catch (error) {
+      console.error("Failed to generate RS PDF", error)
+    }
   }
 
   if (isLoading) {
@@ -519,7 +594,7 @@ export default function TagesdetailPage() {
             variant="outline"
             onClick={handleEditClick}
             className="border-montron-contrast/30 hover:bg-montron-extra hover:text-montron-primary dark:border-montron-contrast/50 dark:hover:bg-montron-contrast/20"
-            disabled={(!hasTb && !hasRs) || isSavingTb || isSavingRs}
+            disabled={(!hasTb && !hasRs) || isSavingTb || isSavingRs || status === "RELEASED"}
           >
             {editMode ? (
               <>
@@ -536,16 +611,23 @@ export default function TagesdetailPage() {
 
           <Button
             variant="outline"
-            onClick={handlePdfExport}
+            size="sm"
+            onClick={() => void handleGenerateTbPdf()}
+            disabled={isGeneratingPdf}
             className="border-montron-contrast/30 hover:bg-montron-extra hover:text-montron-primary dark:border-montron-contrast/50 dark:hover:bg-montron-contrast/20"
           >
             <FileOutput className="h-4 w-4 mr-2" />
-            PDF generieren
+            {isGeneratingPdf ? "PDF wird erstellt…" : "PDF generieren"}
           </Button>
 
-          <Button onClick={handleRelease} className="bg-montron-primary hover:bg-montron-primary/90">
+          <Button
+            onClick={() => void handleOpenReleaseDialog()}
+            size="sm"
+            disabled={status === "RELEASED" || isConfirmingRelease || isRequestingPin}
+            className="bg-montron-primary text-white hover:bg-montron-primary/90 disabled:opacity-60"
+          >
             <Check className="h-4 w-4 mr-2" />
-            Freigeben
+            {status === "RELEASED" ? "Bereits freigegeben" : "Freigeben"}
           </Button>
         </div>
       </div>
@@ -725,10 +807,23 @@ export default function TagesdetailPage() {
         <div ref={rsRef}>
           <Card className="border-montron-contrast/20 dark:border-montron-contrast/50 dark:bg-montron-text">
             <CardHeader className="pb-3">
-              <CardTitle className="flex items-center text-montron-text dark:text-white">
-                <ClipboardList className="h-5 w-5 mr-2 text-montron-primary" />
-                REGIESCHEINE
-              </CardTitle>
+              <div className="flex items-center justify-between gap-2">
+                <CardTitle className="flex items-center text-montron-text dark:text-white">
+                  <ClipboardList className="h-5 w-5 mr-2 text-montron-primary" />
+                  REGIESCHEINE
+                </CardTitle>
+                {hasRs && (
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    disabled={isGeneratingPdf}
+                    onClick={() => void handleGenerateRsPdf()}
+                    className="border-montron-contrast/30 hover:bg-montron-extra hover:text-montron-primary dark:border-montron-contrast/50 dark:hover:bg-montron-contrast/20"
+                  >
+                    {isGeneratingPdf ? "PDF…" : "RS PDF"}
+                  </Button>
+                )}
+              </div>
             </CardHeader>
             <CardContent className="space-y-4">
               {!hasRs && (<div className="text-xs text-montron-contrast dark:text-montron-extra">Kein Regieschein vorhanden.</div>)}
@@ -992,6 +1087,92 @@ export default function TagesdetailPage() {
           </div>
         </div>
       </div>
+
+      <Dialog
+        open={releaseDialogOpen}
+        onOpenChange={(open) => {
+          setReleaseDialogOpen(open)
+          if (!open) {
+            setReleasePin("")
+            setReleaseError(null)
+            setPinRequested(false)
+          }
+        }}
+      >
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle className="text-montron-text dark:text-white">
+              Tagesbericht freigeben
+            </DialogTitle>
+          </DialogHeader>
+          <div className="space-y-3 text-sm text-montron-text dark:text-montron-extra">
+            {status === "RELEASED" ? (
+              <div className="text-xs text-montron-contrast dark:text-montron-extra">
+                Dieser Tag wurde bereits freigegeben.
+              </div>
+            ) : hasBlockingErrors ? (
+              <div className="rounded-md border border-red-300 bg-red-50 px-3 py-2 text-xs text-red-700 dark:border-red-700 dark:bg-red-900/20 dark:text-red-200">
+                Freigabe nicht möglich: Es liegen noch Fehler vor. Bitte behebe zuerst alle Fehler.
+              </div>
+            ) : (
+              <>
+                <p>
+                  Zur endgültigen Freigabe des Tagesberichts wurde ein PIN-Code an den verantwortlichen Benutzer gesendet.
+                </p>
+                <p className="text-xs text-montron-contrast dark:text-montron-extra">
+                  Bitte gib den PIN ein, um die Freigabe abzuschließen.
+                </p>
+                <div className="space-y-1">
+                  <Label htmlFor="release-pin" className="text-xs">
+                    PIN
+                  </Label>
+                  <Input
+                    id="release-pin"
+                    type="text"
+                    inputMode="numeric"
+                    maxLength={6}
+                    value={releasePin}
+                    onChange={(event) => setReleasePin(event.target.value)}
+                    className="text-sm"
+                  />
+                </div>
+                {isRequestingPin && (
+                  <div className="text-xs text-montron-contrast dark:text-montron-extra">
+                    PIN wird gesendet…
+                  </div>
+                )}
+                {releaseError && (
+                  <div className="text-xs text-red-500">{releaseError}</div>
+                )}
+              </>
+            )}
+          </div>
+
+          <div className="mt-4 flex justify-end gap-2">
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => setReleaseDialogOpen(false)}
+              className="border-montron-contrast/30 hover:bg-montron-extra hover:text-montron-primary dark:border-montron-contrast/50 dark:hover:bg-montron-contrast/20"
+            >
+              Abbrechen
+            </Button>
+            <Button
+              size="sm"
+              disabled={
+                status === "RELEASED" ||
+                hasBlockingErrors ||
+                isConfirmingRelease ||
+                isRequestingPin
+              }
+              onClick={() => void handleConfirmRelease()}
+              className="bg-montron-primary text-white hover:bg-montron-primary/90 disabled:opacity-60"
+            >
+              {isConfirmingRelease ? "Wird freigegeben…" : "Freigabe bestätigen"}
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
 
       <Dialog
         open={Boolean(previewUrl)}

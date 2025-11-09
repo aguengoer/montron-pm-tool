@@ -35,3 +35,12 @@
 5. Update TB, RS, and Streetwatch renderers to apply error/warning highlights and indicators based on the mapped validation issues.
 6. Ensure new imports, hooks, and helpers keep TypeScript happy; adjust styling for dark mode consistency where necessary.
 7. Perform lint or targeted checks if available, noting any scaffold limitations.
+
+## Frontend Task – Release & PDF Integration
+1. Add React Query mutations (`useRequestReleasePin`, `useConfirmRelease`) and a shared `useGeneratePdf` hook for TB/RS PDFs.
+2. Extend Tagesdetail state to track release dialog visibility, PIN input, request progress, and PDF generation state.
+3. Implement handlers for opening the release dialog (with PIN request), confirming release (with validation error handling), and invoking PDF generation endpoints.
+4. Update header actions and RS card buttons to call the new handlers, disabling controls based on status and in-flight mutations.
+5. Render a release confirmation dialog (PIN input, error feedback) alongside the existing image preview dialog, ensuring consistent styling in light/dark modes.
+6. Trigger `useWorkdayDetail` query invalidation after successful release so status/fields refresh automatically.
+7. Reuse the existing validation logic to block release when error-level issues remain, surfacing clear feedback to the user.
