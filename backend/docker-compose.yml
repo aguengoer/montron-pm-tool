@@ -1,0 +1,53 @@
+version: "3.8"
+
+services:
+  postgres:
+    image: postgres:15-alpine
+    container_name: montron-pm-postgres
+    environment:
+      POSTGRES_USER: montron
+      POSTGRES_PASSWORD: montron_dev_pass
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./docker/init-dbs.sql:/docker-entrypoint-initdb.d/init-dbs.sql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U montron"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  pgadmin:
+    image: dpage/pgadmin4:latest
+    container_name: montron-pm-pgadmin
+    environment:
+      PGADMIN_DEFAULT_EMAIL: admin@montron.local
+      PGADMIN_DEFAULT_PASSWORD: admin
+      PGADMIN_CONFIG_SERVER_MODE: 'False'
+    ports:
+      - "5051:80"
+    depends_on:
+      - postgres
+    volumes:
+      - pgadmin_data:/var/lib/pgadmin
+
+  backend:
+    build: .
+    container_name: montron-pm-backend
+    environment:
+      SPRING_PROFILES_ACTIVE: dev
+      DB_URL: jdbc:postgresql://postgres:5432/montron_pm
+      DB_USER: montron
+      DB_PASS: montron_dev_pass
+      FORM_API_BASE_URL: http://host.docker.internal:8080
+    ports:
+      - "8090:8090"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    command: ["java", "-jar", "app.jar"]
+
+volumes:
+  postgres_data:
+  pgadmin_data:
