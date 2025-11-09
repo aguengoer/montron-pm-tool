@@ -1,24 +1,59 @@
-server:
-  port: 8080
-
 spring:
-  datasource:
-    url: jdbc:postgresql://localhost:5432/montron_pm
-    username: montron_pm
-    password: montron_pm
+  application:
+    name: montron-pm-backend
+
+  profiles:
+    active: ${SPRING_PROFILES_ACTIVE:dev}
+
+  jackson:
+    default-property-inclusion: non_null
+    serialization:
+      write-dates-as-timestamps: false
+    deserialization:
+      adjust-dates-to-context-time-zone: false
+    time-zone: UTC
+
   jpa:
-    hibernate:
-      ddl-auto: none
+    open-in-view: false
     properties:
       hibernate:
-        show_sql: false
-        format_sql: false
+        jdbc:
+          time_zone: UTC
+
   flyway:
     enabled: true
+    baseline-on-migrate: true
+    baseline-version: 1
+
+  servlet:
+    multipart:
+      enabled: true
+      max-file-size: 50MB
+      max-request-size: 100MB
+
+server:
+  port: ${SERVER_PORT:8080}
+  error:
+    include-message: always
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info
+  endpoint:
+    health:
+      show-details: when-authorized
+
+springdoc:
+  api-docs:
+    path: /v3/api-docs
+  swagger-ui:
+    path: /swagger-ui.html
 
 form-api:
-  base-url: http://localhost:8090
+  base-url: ${FORM_API_BASE_URL:http://localhost:8090}
 
 pm:
   export:
-    base-directory: /mnt/montron-export
+    base-directory: ${PM_EXPORT_BASE_DIR:/mnt/montron-export}
