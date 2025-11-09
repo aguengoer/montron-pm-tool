@@ -1,6 +1,6 @@
 "use client"
 
-import { useMemo, useState } from "react"
+import { useEffect, useMemo, useState } from "react"
 import { format } from "date-fns"
 import { de } from "date-fns/locale"
 import {
@@ -17,7 +17,17 @@ import { useParams, useRouter } from "next/navigation"
 
 import { useWorkdayDetail } from "@/hooks/useWorkdayDetail"
 import { useWorkdayLayout } from "@/hooks/useWorkdayLayout"
-import type { LayoutFieldConfig, TbDto, RsDto, StreetwatchEntryDto } from "@/lib/workdayTypes"
+import { usePatchTb } from "@/hooks/usePatchTb"
+import { usePatchRs } from "@/hooks/usePatchRs"
+import type {
+  LayoutFieldConfig,
+  TbDto,
+  RsDto,
+  RsPositionDto,
+  StreetwatchEntryDto,
+} from "@/lib/workdayTypes"
+import type { TbPatchRequest } from "@/lib/tbPatchTypes"
+import type { RsPatchRequest } from "@/lib/rsPatchTypes"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Separator } from "@/components/ui/separator"
@@ -25,6 +35,9 @@ import { Label } from "@/components/ui/label"
 import { Alert, AlertDescription } from "@/components/ui/alert"
 import { Spinner } from "@/components/ui/spinner"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
+import { Input } from "@/components/ui/input"
+import { Textarea } from "@/components/ui/textarea"
+import { Switch } from "@/components/ui/switch"
 
 function formatDate(dateIso: string) {
   try {
@@ -101,6 +114,34 @@ function getStreetwatchCell(entry: StreetwatchEntryDto, key: string): unknown {
   }
 }
 
+function positionsAreDifferent(
+  originalPositions: RsPositionDto[] | null | undefined,
+  draftPositions: RsPositionDto[] | null | undefined,
+): boolean {
+  const previous = originalPositions ?? []
+  const next = draftPositions ?? []
+
+  if (previous.length !== next.length) {
+    return true
+  }
+
+  return previous.some((orig, index) => {
+    const candidate = next[index]
+    if (!candidate) {
+      return true
+    }
+
+    return (
+      orig.code !== candidate.code ||
+      orig.description !== candidate.description ||
+      orig.hours !== candidate.hours ||
+      orig.quantity !== candidate.quantity ||
+      orig.unit !== candidate.unit ||
+      orig.pricePerUnit !== candidate.pricePerUnit
+    )
+  })
+}
+
 export default function TagesdetailPage() {
   const router = useRouter()
   const params = useParams<{ id: string; datum: string }>()
@@ -108,6 +149,10 @@ export default function TagesdetailPage() {
   const workdayId = params?.datum ?? ""
 
   const [editMode, setEditMode] = useState(false)
+  const [tbDraft, setTbDraft] = useState<TbDto | null>(null)
+  const [rsDraft, setRsDraft] = useState<RsDto | null>(null)
+  const [saveError, setSaveError] = useState<string | null>(null)
+  const [rsSaveError, setRsSaveError] = useState<string | null>(null)
 
   const {
     data: detail,
@@ -115,28 +160,164 @@ export default function TagesdetailPage() {
     isError,
   } = useWorkdayDetail(workdayId)
   const { data: layout } = useWorkdayLayout()
+  const { mutateAsync: patchTb, isPending: isSavingTb } = usePatchTb(workdayId)
+  const { mutateAsync: patchRs, isPending: isSavingRs } = usePatchRs(workdayId)
 
   const tb = detail?.tb ?? null
   const rs = detail?.rs ?? null
   const streetwatch = detail?.streetwatch ?? null
 
-  const tbFields = useMemo(() => {
+  useEffect(() => {
+    if (tb) {
+      const extraClone = tb.extra ? { ...tb.extra } : null
+      setTbDraft({ ...tb, extra: extraClone })
+    } else {
+      setTbDraft(null)
+    }
+  }, [tb])
+
+  useEffect(() => {
+    if (rs) {
+      const positionsClone = rs.positions ? rs.positions.map((position) => ({ ...position })) : []
+      setRsDraft({ ...rs, positions: positionsClone })
+    } else {
+      setRsDraft(null)
+    }
+  }, [rs])
+
+  const tbFields = useMemo<LayoutFieldConfig[]>(() => {
     const fields = layout?.config.tbFields ?? []
-    return fields.slice().sort((a, b) => (a.order ?? 0) - (b.order ?? 0))
+    return [...fields].sort((a, b) => (a.order ?? 0) - (b.order ?? 0))
   }, [layout])
 
-  const rsFields = useMemo(() => {
+  const rsFields = useMemo<LayoutFieldConfig[]>(() => {
     const fields = layout?.config.rsFields ?? []
-    return fields.slice().sort((a, b) => (a.order ?? 0) - (b.order ?? 0))
+    return [...fields].sort((a, b) => (a.order ?? 0) - (b.order ?? 0))
   }, [layout])
 
-  const streetwatchColumns = useMemo(() => {
+  const streetwatchColumns = useMemo<LayoutFieldConfig[]>(() => {
     const columns = layout?.config.streetwatchColumns ?? []
-    return columns.slice().sort((a, b) => (a.order ?? 0) - (b.order ?? 0))
+    return [...columns].sort((a, b) => (a.order ?? 0) - (b.order ?? 0))
   }, [layout])
 
-  const handleToggleEdit = () => {
-    setEditMode((prev) => !prev)
+  function buildTbPatch(original: TbDto | null, draft: TbDto | null): TbPatchRequest {
+    if (!original || !draft) return {}
+
+    const patch: TbPatchRequest = {}
+
+    const maybeAssign = <K extends keyof TbDto, P extends keyof TbPatchRequest>(dtoKey: K, patchKey: P) => {
+      const prev = original[dtoKey] as TbPatchRequest[P]
+      const next = draft[dtoKey] as TbPatchRequest[P]
+      if (prev !== next) {
+        patch[patchKey] = next
+      }
+    }
+
+    maybeAssign("startTime", "startTime")
+    maybeAssign("endTime", "endTime")
+    maybeAssign("breakMinutes", "breakMinutes")
+    maybeAssign("travelMinutes", "travelMinutes")
+    maybeAssign("licensePlate", "licensePlate")
+    maybeAssign("department", "department")
+    maybeAssign("overnight", "overnight")
+    maybeAssign("kmStart", "kmStart")
+    maybeAssign("kmEnd", "kmEnd")
+    maybeAssign("comment", "comment")
+
+    return patch
+  }
+
+  function buildRsPatch(original: RsDto | null, draft: RsDto | null): RsPatchRequest {
+    if (!original || !draft) return {}
+
+    const patch: RsPatchRequest = {}
+
+    if (original.startTime !== draft.startTime) {
+      patch.startTime = draft.startTime ?? null
+    }
+    if (original.endTime !== draft.endTime) {
+      patch.endTime = draft.endTime ?? null
+    }
+    if (original.breakMinutes !== draft.breakMinutes) {
+      patch.breakMinutes = draft.breakMinutes ?? null
+    }
+    if (original.customerId !== draft.customerId) {
+      patch.customerId = draft.customerId ?? null
+    }
+    if (original.customerName !== draft.customerName) {
+      patch.customerName = draft.customerName ?? null
+    }
+
+    if (positionsAreDifferent(original.positions, draft.positions)) {
+      patch.positions = (draft.positions ?? []).map((position) => ({
+        code: position.code ?? null,
+        description: position.description ?? null,
+        hours: position.hours ?? null,
+        quantity: position.quantity ?? null,
+        unit: position.unit ?? null,
+        pricePerUnit: position.pricePerUnit ?? null,
+      }))
+    }
+
+    return patch
+  }
+
+  const handleEditClick = async () => {
+    setSaveError(null)
+    setRsSaveError(null)
+
+    if (!tbDraft && tb) {
+      const extraClone = tb.extra ? { ...tb.extra } : null
+      setTbDraft({ ...tb, extra: extraClone })
+    }
+    if (!rsDraft && rs) {
+      const positionsClone = rs.positions ? rs.positions.map((position) => ({ ...position })) : []
+      setRsDraft({ ...rs, positions: positionsClone })
+    }
+
+    if (!editMode) {
+      setEditMode(true)
+      return
+    }
+
+    if (!detail?.tb || !tbDraft) {
+      setEditMode(false)
+      return
+    }
+
+    const patch = buildTbPatch(detail.tb, tbDraft)
+    if (Object.keys(patch).length === 0) {
+      setEditMode(false)
+      return
+    }
+
+    try {
+      await patchTb(patch)
+      setEditMode(false)
+    } catch (error) {
+      console.error("Failed to save TB", error)
+      setSaveError("Speichern des Tagesberichts ist fehlgeschlagen.")
+    }
+  }
+
+  const handleSaveRs = async () => {
+    setRsSaveError(null)
+
+    if (!rs || !rsDraft) {
+      return
+    }
+
+    const patch = buildRsPatch(rs, rsDraft)
+    if (Object.keys(patch).length === 0) {
+      return
+    }
+
+    try {
+      await patchRs(patch)
+    } catch (error) {
+      console.error("Failed to save RS", error)
+      setRsSaveError("Speichern des Regiescheins ist fehlgeschlagen.")
+    }
   }
 
   const handlePdfExport = () => {
@@ -170,6 +351,9 @@ export default function TagesdetailPage() {
 
   const formattedDate = formatDate(detail.date)
   const employeeName = `${(detail.employee.lastName ?? "").toUpperCase()} ${detail.employee.firstName ?? ""}`.trim()
+  const hasTb = Boolean(tbDraft)
+  const hasRs = Boolean(rsDraft)
+  const rsPositionsChanged = editMode && rs && rsDraft ? positionsAreDifferent(rs.positions, rsDraft.positions) : false
 
   return (
     <div className="container mx-auto py-8 px-4">
@@ -191,13 +375,14 @@ export default function TagesdetailPage() {
         <div className="flex flex-wrap gap-2">
           <Button
             variant="outline"
-            onClick={handleToggleEdit}
+            onClick={handleEditClick}
             className="border-montron-contrast/30 hover:bg-montron-extra hover:text-montron-primary dark:border-montron-contrast/50 dark:hover:bg-montron-contrast/20"
+            disabled={(!hasTb && !hasRs) || isSavingTb || isSavingRs}
           >
             {editMode ? (
               <>
                 <Check className="h-4 w-4 mr-2" />
-                Änderungen speichern
+                {isSavingTb ? "Speichern…" : "Änderungen speichern"}
               </>
             ) : (
               <>
@@ -226,9 +411,11 @@ export default function TagesdetailPage() {
       <Alert className="mb-6 border-montron-primary/20 bg-montron-extra dark:bg-montron-contrast/20 dark:border-montron-primary/30">
         <Info className="h-4 w-4 text-montron-primary" />
         <AlertDescription className="text-montron-text dark:text-white">
-          Alte Werte werden (später) bei Bearbeitung durchgestrichen angezeigt. Aktuell nur Leseansicht.
+          Änderungen am Tagesbericht werden hervorgehoben und beim Speichern an den Server gesendet.
         </AlertDescription>
       </Alert>
+
+      {saveError && <div className="mb-4 text-sm text-red-500">{saveError}</div>}
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         <Card className="border-montron-contrast/20 dark:border-montron-contrast/50 dark:bg-montron-text">
@@ -240,16 +427,89 @@ export default function TagesdetailPage() {
           </CardHeader>
           <CardContent>
             <div className="space-y-4">
-              {tbFields.length === 0 && <div className="text-xs text-montron-contrast dark:text-montron-extra">Kein Layout für TB konfiguriert.</div>}
-              {tbFields.map((field) => {
-                const value = getTbFieldValue(tb, field.key)
+              {!hasTb && <div className="text-xs text-montron-contrast dark:text-montron-extra">Kein Tagesbericht vorhanden.</div>}
+              {hasTb && tbFields.length === 0 && (
+                <div className="text-xs text-montron-contrast dark:text-montron-extra">Kein Layout für TB konfiguriert.</div>
+              )}
+              {hasTb && tbFields.map((field) => {
+                const originalValue = getTbFieldValue(tb, field.key)
+                const draftValue = getTbFieldValue(tbDraft, field.key)
+                const hasChanged = editMode && tb && tbDraft && originalValue !== draftValue
+
                 return (
                   <div key={field.key} className="grid gap-2">
                     <div className="flex items-center justify-between">
-                      <Label className="text-xs font-medium text-montron-contrast dark:text-montron-extra">{field.label}</Label>
+                      <Label className="text-xs font-medium text-montron-contrast dark:text-montron-extra">
+                        {field.label}
+                      </Label>
+                      {hasChanged && <span className="ml-2 h-2 w-2 rounded-full bg-montron-primary" aria-hidden />}
                     </div>
-                    <div className="text-sm text-montron-text dark:text-white">{toDisplayValue(value)}</div>
-                    {editMode && <Separator className="bg-montron-contrast/10 dark:bg-montron-contrast/40" />}
+
+                    {!editMode && (
+                      <div className="text-sm text-montron-text dark:text-white">{toDisplayValue(originalValue)}</div>
+                    )}
+
+                    {editMode && tbDraft && (
+                      <>
+                        <TbFieldEditor
+                          field={field}
+                          value={draftValue}
+                          onChange={(newValue) => {
+                            setTbDraft((prev) => {
+                              if (!prev) return prev
+                              const next: TbDto = {
+                                ...prev,
+                                extra: prev.extra ? { ...prev.extra } : null,
+                              }
+                              switch (field.key) {
+                                case "startTime":
+                                  next.startTime = (newValue as string) || null
+                                  break
+                                case "endTime":
+                                  next.endTime = (newValue as string) || null
+                                  break
+                                case "breakMinutes":
+                                  next.breakMinutes = newValue === "" || newValue === null ? null : Number(newValue)
+                                  break
+                                case "travelMinutes":
+                                  next.travelMinutes = newValue === "" || newValue === null ? null : Number(newValue)
+                                  break
+                                case "licensePlate":
+                                  next.licensePlate = (newValue as string) ?? null
+                                  break
+                                case "department":
+                                  next.department = (newValue as string) ?? null
+                                  break
+                                case "overnight":
+                                  next.overnight = Boolean(newValue)
+                                  break
+                                case "kmStart":
+                                  next.kmStart = newValue === "" || newValue === null ? null : Number(newValue)
+                                  break
+                                case "kmEnd":
+                                  next.kmEnd = newValue === "" || newValue === null ? null : Number(newValue)
+                                  break
+                                case "comment":
+                                  next.comment = (newValue as string) ?? null
+                                  break
+                                default: {
+                                  const extra = { ...(next.extra ?? {}) }
+                                  extra[field.key] = newValue
+                                  next.extra = extra
+                                }
+                              }
+                              return next
+                            })
+                          }}
+                        />
+                        {hasChanged && (
+                          <div className="text-xs text-montron-primary line-through opacity-70">
+                            {toDisplayValue(originalValue)}
+                          </div>
+                        )}
+                        <Separator className="bg-montron-contrast/10 dark:bg-montron-contrast/40" />
+                      </>
+                    )}
                   </div>
                 )
               })}
@@ -265,57 +525,112 @@ export default function TagesdetailPage() {
             </CardTitle>
           </CardHeader>
           <CardContent className="space-y-4">
-            {rs ? (
+            {!hasRs && (
+              <div className="text-xs text-montron-contrast dark:text-montron-extra">Kein Regieschein vorhanden.</div>
+            )}
+
+            {hasRs && rsDraft && (
               <div className="space-y-4">
                 {rsFields.length === 0 && (
                   <div className="text-xs text-montron-contrast dark:text-montron-extra">Kein Layout für RS konfiguriert.</div>
                 )}
+
                 {rsFields.map((field) => {
-                  const value = getRsFieldValue(rs, field.key)
+                  const originalValue = getRsFieldValue(rs, field.key)
+                  const draftValue = getRsFieldValue(rsDraft, field.key)
+                  const hasChanged = editMode && rs && rsDraft && originalValue !== draftValue
+
                   return (
                     <div key={field.key} className="grid gap-2">
-                      <Label className="text-xs font-medium text-montron-contrast dark:text-montron-extra">
-                        {field.label}
-                      </Label>
-                      <div className="text-sm text-montron-text dark:text-white">{toDisplayValue(value)}</div>
+                      <div className="flex items-center justify-between">
+                        <Label className="text-xs font-medium text-montron-contrast dark:text-montron-extra">
+                          {field.label}
+                        </Label>
+                        {hasChanged && <span className="ml-2 h-2 w-2 rounded-full bg-montron-primary" aria-hidden />}
+                      </div>
+
+                      {!editMode && (
+                        <div className="text-sm text-montron-text dark:text-white">{toDisplayValue(originalValue)}</div>
+                      )}
+
+                      {editMode && (
+                        <>
+                          <RsFieldEditor
+                            field={field}
+                            value={draftValue}
+                            onChange={(newValue) => {
+                              setRsDraft((prev) => {
+                                if (!prev) return prev
+                                const next: RsDto = {
+                                  ...prev,
+                                  positions: prev.positions ? prev.positions.map((position) => ({ ...position })) : [],
+                                }
+                                switch (field.key) {
+                                  case "startTime":
+                                    next.startTime = (newValue as string) || null
+                                    break
+                                  case "endTime":
+                                    next.endTime = (newValue as string) || null
+                                    break
+                                  case "breakMinutes":
+                                    next.breakMinutes = newValue === "" || newValue === null ? null : Number(newValue)
+                                    break
+                                  case "customerName":
+                                    next.customerName = (newValue as string) ?? null
+                                    break
+                                  case "customerId":
+                                    next.customerId = (newValue as string) ?? null
+                                    break
+                                  default:
+                                    break
+                                }
+                                return next
+                              })
+                            }}
+                          />
+                          {hasChanged && (
+                            <div className="text-xs text-montron-primary line-through opacity-70">
+                              {toDisplayValue(originalValue)}
+                            </div>
+                          )}
+                          <Separator className="bg-montron-contrast/10 dark:bg-montron-contrast/40" />
+                        </>
+                      )}
                     </div>
                   )
                 })}
 
-                {rs.positions && rs.positions.length > 0 && (
-                  <div>
-                    <h4 className="text-sm font-medium mb-2 text-montron-text dark:text-white">Positionen</h4>
-                    <Table>
-                      <TableHeader>
-                        <TableRow className="border-montron-contrast/20 dark:border-montron-contrast/50">
-                          <TableHead className="w-[120px] text-montron-text dark:text-white">Code</TableHead>
-                          <TableHead className="text-montron-text dark:text-white">Beschreibung</TableHead>
-                          <TableHead className="text-right text-montron-text dark:text-white">Stunden</TableHead>
-                          <TableHead className="text-right text-montron-text dark:text-white">Menge</TableHead>
-                          <TableHead className="text-right text-montron-text dark:text-white">Preis</TableHead>
-                        </TableRow>
-                      </TableHeader>
-                      <TableBody>
-                        {rs.positions.map((pos, idx) => (
-                          <TableRow key={idx} className="border-montron-contrast/20 dark:border-montron-contrast/50">
-                            <TableCell className="text-montron-text dark:text-white">{pos.code ?? "–"}</TableCell>
-                            <TableCell className="text-montron-text dark:text-white">{pos.description ?? "–"}</TableCell>
-                            <TableCell className="text-right text-montron-text dark:text-white">{pos.hours ?? "–"}</TableCell>
-                            <TableCell className="text-right text-montron-text dark:text-white">
-                              {pos.quantity ? `${pos.quantity} ${pos.unit ?? ""}` : "–"}
-                            </TableCell>
-                            <TableCell className="text-right text-montron-text dark:text-white">
-                              {pos.pricePerUnit ?? "–"}
-                            </TableCell>
-                          </TableRow>
-                        ))}
-                      </TableBody>
-                    </Table>
+                <div>
+                  <div className="flex items-center justify-between mb-2">
+                    <h4 className="text-sm font-medium text-montron-text dark:text-white">Positionen</h4>
+                    {editMode && rsPositionsChanged && (
+                      <span className="ml-2 h-2 w-2 rounded-full bg-montron-primary" aria-hidden />
+                    )}
+                  </div>
+                  <RsPositionsTable
+                    positions={rsDraft.positions ?? []}
+                    editMode={editMode}
+                    onChange={(nextPositions) => {
+                      setRsDraft((prev) => (prev ? { ...prev, positions: nextPositions } : prev))
+                    }}
+                  />
+                </div>
+
+                {editMode && (
+                  <div className="flex flex-wrap items-center justify-end gap-2 pt-2">
+                    {rsSaveError && <div className="text-xs text-red-500">{rsSaveError}</div>}
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => void handleSaveRs()}
+                      disabled={isSavingRs}
+                      className="border-montron-contrast/30 hover:bg-montron-extra hover:text-montron-primary dark:border-montron-contrast/50 dark:hover:bg-montron-contrast/20"
+                    >
+                      {isSavingRs ? "Speichern…" : "RS speichern"}
+                    </Button>
                   </div>
                 )}
               </div>
-            ) : (
-              <div className="text-xs text-montron-contrast dark:text-montron-extra">Kein Regieschein vorhanden.</div>
             )}
           </CardContent>
         </Card>
@@ -332,18 +647,18 @@ export default function TagesdetailPage() {
               <Table>
                 <TableHeader>
                   <TableRow className="border-montron-contrast/20 dark:border-montron-contrast/50">
-                    {streetwatchColumns.map((column) => (
-                      <TableHead key={column.key} className="text-montron-text dark:text-white">
+                    {streetwatchColumns.map((column, idx) => (
+                      <TableHead key={`${column.key}-${idx}`} className="text-montron-text dark:text-white">
                         {column.label}
                       </TableHead>
                     ))}
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {streetwatch.entries.map((entry, idx) => (
+                  {streetwatch.entries.map((entry: StreetwatchEntryDto, idx: number) => (
                     <TableRow key={idx} className="border-montron-contrast/20 dark:border-montron-contrast/50">
-                      {streetwatchColumns.map((column) => (
-                        <TableCell key={column.key} className="text-montron-text dark:text-white">
+                      {streetwatchColumns.map((column, colIdx) => (
+                        <TableCell key={`${column.key}-${colIdx}`} className="text-montron-text dark:text-white">
                           {toDisplayValue(getStreetwatchCell(entry, column.key))}
                         </TableCell>
                       ))}
@@ -361,3 +676,267 @@ export default function TagesdetailPage() {
   )
 }
 
+type TbFieldEditorProps = {
+  field: LayoutFieldConfig
+  value: unknown
+  onChange: (value: unknown) => void
+}
+
+function TbFieldEditor({ field, value, onChange }: TbFieldEditorProps) {
+  const editorType = field.editorType ?? "text"
+
+  if (editorType === "time15") {
+    const timeValue = typeof value === "string" ? value.slice(0, 5) : ""
+    return (
+      <Input
+        type="time"
+        value={timeValue}
+        step={900}
+        onChange={(event) => onChange(event.target.value)}
+        className="text-sm"
+      />
+    )
+  }
+
+  if (editorType === "number") {
+    const numberValue =
+      typeof value === "number" || typeof value === "string" ? value : ""
+    return (
+      <Input
+        type="number"
+        value={numberValue}
+        onChange={(event) => onChange(event.target.value)}
+        className="text-sm"
+      />
+    )
+  }
+
+  if (editorType === "textarea") {
+    const textValue =
+      typeof value === "string" ? value : value === null || value === undefined ? "" : String(value)
+    return (
+      <Textarea
+        value={textValue}
+        onChange={(event) => onChange(event.target.value)}
+        rows={3}
+        className="text-sm"
+      />
+    )
+  }
+
+  if (editorType === "checkbox" || typeof value === "boolean") {
+    return (
+      <div className="flex items-center gap-2">
+        <Switch checked={Boolean(value)} onCheckedChange={(checked) => onChange(checked)} />
+        <span className="text-xs text-montron-contrast dark:text-montron-extra">Ja / Nein</span>
+      </div>
+    )
+  }
+
+  const textValue =
+    typeof value === "string" ? value : value === null || value === undefined ? "" : String(value)
+
+  return (
+    <Input
+      type="text"
+      value={textValue}
+      onChange={(event) => onChange(event.target.value)}
+      className="text-sm"
+    />
+  )
+}
+
+type RsFieldEditorProps = {
+  field: LayoutFieldConfig
+  value: unknown
+  onChange: (value: unknown) => void
+}
+
+function RsFieldEditor({ field, value, onChange }: RsFieldEditorProps) {
+  const editorType = field.editorType ?? "text"
+
+  if (editorType === "time15") {
+    const timeValue = typeof value === "string" ? value.slice(0, 5) : ""
+    return (
+      <Input
+        type="time"
+        value={timeValue}
+        step={900}
+        onChange={(event) => onChange(event.target.value)}
+        className="text-sm"
+      />
+    )
+  }
+
+  if (editorType === "number") {
+    const numberValue =
+      typeof value === "number" || typeof value === "string" ? value : ""
+    return (
+      <Input
+        type="number"
+        value={numberValue}
+        onChange={(event) => onChange(event.target.value)}
+        className="text-sm"
+      />
+    )
+  }
+
+  if (editorType === "textarea") {
+    const textValue =
+      typeof value === "string" ? value : value == null ? "" : String(value)
+    return (
+      <Textarea
+        value={textValue}
+        onChange={(event) => onChange(event.target.value)}
+        rows={3}
+        className="text-sm"
+      />
+    )
+  }
+
+  const textValue =
+    typeof value === "string" ? value : value == null ? "" : String(value)
+
+  return (
+    <Input
+      type="text"
+      value={textValue}
+      onChange={(event) => onChange(event.target.value)}
+      className="text-sm"
+    />
+  )
+}
+
+type RsPositionsTableProps = {
+  positions: RsPositionDto[]
+  editMode: boolean
+  onChange: (positions: RsPositionDto[]) => void
+}
+
+function RsPositionsTable({ positions, editMode, onChange }: RsPositionsTableProps) {
+  const handleCellChange = (index: number, key: keyof RsPositionDto, rawValue: unknown) => {
+    const next = positions.map((entry, idx) => {
+      if (idx !== index) return entry
+
+      const updated: RsPositionDto = { ...entry }
+      const value = rawValue
+
+      switch (key) {
+        case "hours":
+        case "quantity":
+        case "pricePerUnit": {
+          const numeric =
+            typeof value === "number" ? value : value === "" || value == null ? null : Number(value)
+          updated[key] = numeric as never
+          break
+        }
+        default: {
+          updated[key] = (value === "" ? null : (value as string | null)) as never
+          break
+        }
+      }
+
+      return updated
+    })
+
+    onChange(next)
+  }
+
+  if (!positions.length && !editMode) {
+    return <div className="text-xs text-montron-contrast dark:text-montron-extra">Keine Positionen vorhanden.</div>
+  }
+
+  const rows = positions.length > 0 ? positions : editMode
+    ? [{ code: null, description: null, hours: null, quantity: null, unit: null, pricePerUnit: null }]
+    : []
+
+  return (
+    <Table>
+      <TableHeader>
+        <TableRow className="border-montron-contrast/20 dark:border-montron-contrast/50">
+          <TableHead className="text-montron-text dark:text-white">Code</TableHead>
+          <TableHead className="text-montron-text dark:text-white">Beschreibung</TableHead>
+          <TableHead className="text-right text-montron-text dark:text-white">Stunden</TableHead>
+          <TableHead className="text-right text-montron-text dark:text-white">Menge</TableHead>
+          <TableHead className="text-montron-text dark:text-white">Einheit</TableHead>
+          <TableHead className="text-right text-montron-text dark:text-white">Preis/Einheit</TableHead>
+        </TableRow>
+      </TableHeader>
+      <TableBody>
+        {rows.map((position, index) => {
+          const safe = position ?? {
+            code: null,
+            description: null,
+            hours: null,
+            quantity: null,
+            unit: null,
+            pricePerUnit: null,
+          }
+
+          if (!editMode) {
+            return (
+              <TableRow key={index} className="border-montron-contrast/20 dark:border-montron-contrast/50">
+                <TableCell className="text-montron-text dark:text-white">{safe.code ?? "–"}</TableCell>
+                <TableCell className="text-montron-text dark:text-white">{safe.description ?? "–"}</TableCell>
+                <TableCell className="text-right text-montron-text dark:text-white">{safe.hours ?? "–"}</TableCell>
+                <TableCell className="text-right text-montron-text dark:text-white">{safe.quantity ?? "–"}</TableCell>
+                <TableCell className="text-montron-text dark:text-white">{safe.unit ?? "–"}</TableCell>
+                <TableCell className="text-right text-montron-text dark:text-white">{safe.pricePerUnit ?? "–"}</TableCell>
+              </TableRow>
+            )
+          }
+
+          return (
+            <TableRow key={index} className="border-montron-contrast/20 dark:border-montron-contrast/50">
+              <TableCell>
+                <Input
+                  value={safe.code ?? ""}
+                  onChange={(event) => handleCellChange(index, "code", event.target.value)}
+                  className="text-sm"
+                />
+              </TableCell>
+              <TableCell>
+                <Input
+                  value={safe.description ?? ""}
+                  onChange={(event) => handleCellChange(index, "description", event.target.value)}
+                  className="text-sm"
+                />
+              </TableCell>
+              <TableCell>
+                <Input
+                  type="number"
+                  value={safe.hours ?? ""}
+                  onChange={(event) => handleCellChange(index, "hours", event.target.value)}
+                  className="text-sm"
+                />
+              </TableCell>
+              <TableCell>
+                <Input
+                  type="number"
+                  value={safe.quantity ?? ""}
+                  onChange={(event) => handleCellChange(index, "quantity", event.target.value)}
+                  className="text-sm"
+                />
+              </TableCell>
+              <TableCell>
+                <Input
+                  value={safe.unit ?? ""}
+                  onChange={(event) => handleCellChange(index, "unit", event.target.value)}
+                  className="text-sm"
+                />
+              </TableCell>
+              <TableCell>
+                <Input
+                  type="number"
+                  value={safe.pricePerUnit ?? ""}
+                  onChange={(event) => handleCellChange(index, "pricePerUnit", event.target.value)}
+                  className="text-sm"
+                />
+              </TableCell>
+            </TableRow>
+          )
+        })}
+      </TableBody>
+    </Table>
+  )
+}

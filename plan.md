@@ -17,3 +17,12 @@
 15. Implement `TenantContext` and `TenantContextFilter`, wiring the filter into the security chain.
 16. Add an example secured endpoint demonstrating `@PreAuthorize` usage.
 17. Validate build (compilation) and summarize new security and tenant context components.
+
+## Frontend Task – RS Panel Editing
+1. Review existing RS rendering in `app/mitarbeiter/[id]/tagesdetail/[datum]/page.tsx` and related workday types to confirm current structure.
+2. Add new TypeScript definitions in `lib/rsPatchTypes.ts` for RS patch payloads and create `hooks/usePatchRs.ts` mirroring the TB hook behaviour.
+3. Extend the Tagesdetail page with RS drafting state, cloning logic inside `useEffect`, and wire up the `usePatchRs` mutation hook.
+4. Implement a `buildRsPatch` helper plus `handleSaveRs` to compare original vs. draft data, submit patches when changes exist, and capture errors.
+5. Update RS field rendering to support edit mode using a new `RsFieldEditor`, change indicators, and strikethrough of previous values similar to TB.
+6. Make RS positions editable by introducing an `RsPositionsTable` that manages row-level updates in edit mode while preserving the read-only layout.
+7. Verify linting or targeted type-checks if feasible to ensure the new code integrates cleanly before proceeding to subsequent phases.
