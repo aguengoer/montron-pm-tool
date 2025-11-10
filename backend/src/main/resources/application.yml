@@ -58,7 +58,7 @@ security:
     origins: ${SECURITY_CORS_ORIGINS:http://localhost:3000,http://localhost:3001}
 
 form-api:
-  base-url: ${FORM_API_BASE_URL:http://localhost:8090}
+  base-url: ${FORM_API_BASE_URL:http://localhost:8090/api}
 
 pm:
   export:

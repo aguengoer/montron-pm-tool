@@ -1,5 +1,6 @@
 package dev.montron.pm.integration;
 
+import com.fasterxml.jackson.annotation.JsonProperty;
 import java.time.Instant;
 import java.time.LocalDate;
 import java.util.List;
@@ -28,6 +29,28 @@ public class FormBackendClient {
             String lastName,
             String department,
             String status) {
+    }
+
+    public record FormEmployeeResponse(
+            String id,
+            String username,
+            String firstName,
+            String lastName,
+            String team,
+            String note,
+            String status,
+            String role,
+            Instant lastLoginAt,
+            Instant createdAt,
+            Instant updatedAt) {
+    }
+
+    public record FormEmployeePage(
+            List<FormEmployeeResponse> content,
+            @JsonProperty("number") int page,
+            int size,
+            long totalElements,
+            int totalPages) {
     }
 
     private final WebClient webClient;
@@ -94,23 +117,23 @@ public class FormBackendClient {
                 .block();
     }
 
-    public FormEmployeeDto createEmployeeInFormBackend(FormEmployeeCreateRequest request) {
+    public FormEmployeeResponse createEmployeeInFormBackend(FormEmployeeCreateRequest request) {
         return webClient.post()
                 .uri("/employees")
                 .header(HttpHeaders.AUTHORIZATION, resolveBearerToken())
                 .bodyValue(request)
                 .retrieve()
-                .bodyToMono(FormEmployeeDto.class)
+                .bodyToMono(FormEmployeeResponse.class)
                 .block();
     }
 
-    public FormEmployeeDto updateEmployeeInFormBackend(UUID id, FormEmployeeUpdateRequest request) {
+    public FormEmployeeResponse updateEmployeeInFormBackend(UUID id, FormEmployeeUpdateRequest request) {
         return webClient.put()
                 .uri("/employees/{id}", id)
                 .header(HttpHeaders.AUTHORIZATION, resolveBearerToken())
                 .bodyValue(request)
                 .retrieve()
-                .bodyToMono(FormEmployeeDto.class)
+                .bodyToMono(FormEmployeeResponse.class)
                 .block();
     }
 
@@ -138,6 +161,35 @@ public class FormBackendClient {
                 .header(HttpHeaders.AUTHORIZATION, resolveBearerToken())
                 .retrieve()
                 .toBodilessEntity()
+                .block();
+    }
+
+    public FormEmployeePage listEmployees(int page, int size, String search, String status) {
+        return webClient.get()
+                .uri(uriBuilder -> {
+                    var builder = uriBuilder.path("/employees")
+                            .queryParam("page", page)
+                            .queryParam("size", size);
+                    if (search != null && !search.isBlank()) {
+                        builder.queryParam("search", search);
+                    }
+                    if (status != null && !status.isBlank()) {
+                        builder.queryParam("status", status);
+                    }
+                    return builder.build();
+                })
+                .header(HttpHeaders.AUTHORIZATION, resolveBearerToken())
+                .retrieve()
+                .bodyToMono(FormEmployeePage.class)
+                .block();
+    }
+
+    public FormEmployeeResponse getEmployee(UUID id) {
+        return webClient.get()
+                .uri("/employees/{id}", id)
+                .header(HttpHeaders.AUTHORIZATION, resolveBearerToken())
+                .retrieve()
+                .bodyToMono(FormEmployeeResponse.class)
                 .block();
     }
 }

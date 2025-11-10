@@ -29,7 +29,7 @@ logging:
     org.hibernate.SQL: DEBUG
 
 form-api:
-  base-url: ${FORM_API_BASE_URL:http://localhost:8090}
+  base-url: ${FORM_API_BASE_URL:http://localhost:8090/api}
 
 pm:
   export:
