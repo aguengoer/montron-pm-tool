@@ -44,3 +44,15 @@
 5. Render a release confirmation dialog (PIN input, error feedback) alongside the existing image preview dialog, ensuring consistent styling in light/dark modes.
 6. Trigger `useWorkdayDetail` query invalidation after successful release so status/fields refresh automatically.
 7. Reuse the existing validation logic to block release when error-level issues remain, surfacing clear feedback to the user.
+
+## Frontend Task – Form API Base URL
+8.1 Update `pm-web-frontend/lib/config.ts` so the default `FORM_API_BASE_URL` includes the `/api` context path (`http://localhost:8090/api`).
+8.2 Verify `.env` or environment overrides remain compatible and document the required value for local development.
+8.3 Smoke test the login flow to confirm requests hit `/api/auth/login` and receive the expected CORS headers.
+
+## Backend Task – CORS Configuration
+1. Review existing security configuration in `backend/src/main/java/dev/montron/pm/config/SecurityConfig.java` and identify extension points for CORS setup.
+2. Add application property (e.g. `security.cors.origins`) to `application.yml` profiles to drive allowed origins; include localhost ports 3000 and 3001 for local dev.
+3. Create a `CorsConfig` class in `dev.montron.pm.config` mirroring the implementation from the Formbuilder backend, parsing the comma-separated origins and registering the configuration for all endpoints.
+4. Wire the new configuration with the existing `SecurityFilterChain`, ensuring CORS support is enabled before the security filter chain processes requests.
+5. Add/update tests or manual verification steps (e.g. login flow from Next.js frontend) to confirm that `Access-Control-Allow-Origin` is returned for allowed hosts.

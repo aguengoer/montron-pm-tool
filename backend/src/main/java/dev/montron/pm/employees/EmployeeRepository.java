@@ -20,18 +20,31 @@ public interface EmployeeRepository extends JpaRepository<EmployeeEntity, UUID> 
             String department,
             Pageable pageable);
 
-    @Query("""
-            select e from EmployeeEntity e
-            where e.companyId = :companyId
-              and (:status is null or e.status = :status)
+    @Query(value = """
+            select e.* from employee e
+            where e.company_id = CAST(:companyId AS uuid)
+              and (CAST(:status AS varchar) is null or e.status = CAST(:status AS varchar))
               and (
-                  :q is null
-                  or lower(e.username) like lower(concat('%', :q, '%'))
-                  or lower(e.firstName) like lower(concat('%', :q, '%'))
-                  or lower(e.lastName) like lower(concat('%', :q, '%'))
+                  CAST(:q AS varchar) is null
+                  or lower(CAST(e.username AS varchar)) like lower(concat('%', CAST(:q AS varchar), '%'))
+                  or lower(CAST(e.first_name AS varchar)) like lower(concat('%', CAST(:q AS varchar), '%'))
+                  or lower(CAST(e.last_name AS varchar)) like lower(concat('%', CAST(:q AS varchar), '%'))
               )
-              and (:department is null or lower(e.department) like lower(concat('%', :department, '%')))
-            """)
+              and (CAST(:department AS varchar) is null or lower(CAST(e.department AS varchar)) like lower(concat('%', CAST(:department AS varchar), '%')))
+            """, 
+            countQuery = """
+            select count(*) from employee e
+            where e.company_id = CAST(:companyId AS uuid)
+              and (CAST(:status AS varchar) is null or e.status = CAST(:status AS varchar))
+              and (
+                  CAST(:q AS varchar) is null
+                  or lower(CAST(e.username AS varchar)) like lower(concat('%', CAST(:q AS varchar), '%'))
+                  or lower(CAST(e.first_name AS varchar)) like lower(concat('%', CAST(:q AS varchar), '%'))
+                  or lower(CAST(e.last_name AS varchar)) like lower(concat('%', CAST(:q AS varchar), '%'))
+              )
+              and (CAST(:department AS varchar) is null or lower(CAST(e.department AS varchar)) like lower(concat('%', CAST(:department AS varchar), '%')))
+            """,
+            nativeQuery = true)
     Page<EmployeeEntity> search(
             @Param("companyId") UUID companyId,
             @Param("status") String status,
@@ -40,4 +53,6 @@ public interface EmployeeRepository extends JpaRepository<EmployeeEntity, UUID> 
             Pageable pageable);
 
     Optional<EmployeeEntity> findByIdAndCompanyId(UUID id, UUID companyId);
+
+    Optional<EmployeeEntity> findByUsername(String username);
 }

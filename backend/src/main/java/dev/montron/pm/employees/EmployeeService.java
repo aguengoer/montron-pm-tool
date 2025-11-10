@@ -46,7 +46,8 @@ public class EmployeeService {
         String normalizedDepartment = StringUtils.hasText(department) ? department.trim() : null;
         String normalizedQuery = StringUtils.hasText(q) ? q.trim() : null;
 
-        Pageable pageable = PageRequest.of(page, size, Sort.by("lastName").ascending().and(Sort.by("firstName").ascending()));
+        // Use database column names for native query sorting
+        Pageable pageable = PageRequest.of(page, size, Sort.by("last_name").ascending().and(Sort.by("first_name").ascending()));
 
         Page<EmployeeEntity> result = employeeRepository.search(
                 companyId,

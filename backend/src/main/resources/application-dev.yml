@@ -18,6 +18,10 @@ spring:
 server:
   port: ${SERVER_PORT:8080}
 
+security:
+  cors:
+    origins: http://localhost:3000,http://localhost:3001
+
 logging:
   level:
     dev.montron.pm: DEBUG

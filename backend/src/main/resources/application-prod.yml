@@ -36,6 +36,10 @@ logging:
     dev.montron.pm: INFO
     org.springframework.security: WARN
 
+security:
+  cors:
+    origins: ${SECURITY_CORS_ORIGINS:http://localhost:3000,http://localhost:3001}
+
 form-api:
   base-url: ${FORM_API_BASE_URL:https://form-api.example.com}
 
