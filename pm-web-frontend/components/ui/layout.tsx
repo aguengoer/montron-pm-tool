@@ -18,15 +18,18 @@ export function Layout({ children }: { children: React.ReactNode }) {
   const { isAuthenticated, loading } = useAuth()
 
   const isLoginRoute = pathname === "/login"
+  const isSetupRoute = pathname?.startsWith("/setup")
 
   useEffect(() => {
     if (loading) return
+    // Skip auth checks for setup routes - handled by SetupGuard
+    if (isSetupRoute) return
     if (!isLoginRoute && !isAuthenticated) {
       router.replace("/login")
     } else if (isLoginRoute && isAuthenticated) {
       router.replace("/mitarbeiter")
     }
-  }, [loading, isAuthenticated, isLoginRoute, router])
+  }, [loading, isAuthenticated, isLoginRoute, isSetupRoute, router])
 
   if (loading) {
     return (
@@ -42,6 +45,11 @@ export function Layout({ children }: { children: React.ReactNode }) {
         {children}
       </div>
     )
+  }
+
+  // Setup routes don't require authentication - handled by SetupGuard
+  if (isSetupRoute) {
+    return <>{children}</>
   }
 
   if (!isAuthenticated) {

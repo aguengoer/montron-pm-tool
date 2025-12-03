@@ -26,10 +26,15 @@ public class SecurityConfig {
 
     private final TenantContextFilter tenantContextFilter;
     private final CorsConfigurationSource corsConfigurationSource;
+    private final dev.montron.pm.setup.SetupBlockingFilter setupBlockingFilter;
 
-    public SecurityConfig(TenantContextFilter tenantContextFilter, CorsConfigurationSource corsConfigurationSource) {
+    public SecurityConfig(
+            TenantContextFilter tenantContextFilter,
+            CorsConfigurationSource corsConfigurationSource,
+            dev.montron.pm.setup.SetupBlockingFilter setupBlockingFilter) {
         this.tenantContextFilter = tenantContextFilter;
         this.corsConfigurationSource = corsConfigurationSource;
+        this.setupBlockingFilter = setupBlockingFilter;
     }
 
     @Bean
@@ -40,6 +45,8 @@ public class SecurityConfig {
                 .sessionManagement(session -> session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
                 .authorizeHttpRequests(auth -> auth
                         .requestMatchers("/api/ping", "/v3/api-docs/**", "/swagger-ui/**").permitAll()
+                        .requestMatchers("/health", "/actuator/health").permitAll()
+                        .requestMatchers("/setup/**").permitAll() // Setup endpoints are public (gated by filter)
                         .requestMatchers(org.springframework.http.HttpMethod.OPTIONS, "/**").permitAll()
                         .requestMatchers("/api/**").authenticated()
                         .anyRequest().permitAll())
@@ -48,6 +55,8 @@ public class SecurityConfig {
 
         // TODO: Configure issuer URI / JWK set URI for JWT validation once available from Montron backend.
         http.addFilterAfter(tenantContextFilter, BearerTokenAuthenticationFilter.class);
+        // Block setup endpoints when configured (must be after security but before controllers)
+        http.addFilterBefore(setupBlockingFilter, org.springframework.security.web.authentication.UsernamePasswordAuthenticationFilter.class);
 
         return http.build();
     }

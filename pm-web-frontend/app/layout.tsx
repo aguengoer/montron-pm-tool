@@ -3,6 +3,7 @@ import { Work_Sans, Saira } from "next/font/google"
 import "./globals.css"
 import { Layout } from "@/components/ui/layout"
 import { AppProviders } from "@/app/providers"
+import { SetupGuard } from "@/components/setup-guard"
 
 const worksans = Work_Sans({
   subsets: ["latin"],
@@ -32,7 +33,9 @@ export default function RootLayout({
     <html lang="de">
       <body className={`${worksans.variable} ${saira.variable} font-worksans`}>
         <AppProviders>
-          <Layout>{children}</Layout>
+          <SetupGuard>
+            <Layout>{children}</Layout>
+          </SetupGuard>
         </AppProviders>
       </body>
     </html>

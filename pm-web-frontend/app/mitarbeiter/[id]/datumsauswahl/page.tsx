@@ -7,7 +7,7 @@ import { de } from "date-fns/locale"
 import { CalendarIcon, FileText, ClipboardList, MapPin, ArrowLeft } from "lucide-react"
 
 import { useEmployee } from "@/hooks/useEmployee"
-import { useEmployeeWorkdays } from "@/hooks/useEmployeeWorkdays"
+import { useEmployeeSubmissions } from "@/hooks/useEmployeeSubmissions"
 import { Button } from "@/components/ui/button"
 import { Calendar } from "@/components/ui/calendar"
 import { Card, CardContent, CardFooter, CardHeader } from "@/components/ui/card"
@@ -59,7 +59,7 @@ export default function DatumsauswahlPage() {
     isLoading,
     isError,
     refetch,
-  } = useEmployeeWorkdays({ employeeId, from: fromIso, to: toIso })
+  } = useEmployeeSubmissions({ employeeId, from: fromIso, to: toIso })
 
   const headerTitle = useMemo(() => {
     if (!employee) {
@@ -159,7 +159,7 @@ export default function DatumsauswahlPage() {
 
             return (
               <Card
-                key={workday.id}
+                key={workday.date}
                 className="hover:shadow-md transition-shadow border-montron-contrast/20 dark:border-montron-contrast/50 dark:bg-montron-text"
               >
                 <CardContent className="p-4">
@@ -181,18 +181,18 @@ export default function DatumsauswahlPage() {
 
                   <div className="space-y-2 text-sm">
                     <div className="flex items-center gap-2 text-montron-text dark:text-white">
-                      <FileText className={`h-4 w-4 ${workday.hasTb ? "text-montron-primary" : "text-montron-contrast/60"}`} />
-                      {workday.hasTb ? "Tagesbericht vorhanden" : "Kein Tagesbericht"}
+                      <FileText className={`h-4 w-4 ${workday.tbCount > 0 ? "text-montron-primary" : "text-montron-contrast/60"}`} />
+                      <span>Tagesberichte: {workday.tbCount}</span>
                     </div>
                     <div className="flex items-center gap-2 text-montron-text dark:text-white">
                       <ClipboardList
-                        className={`h-4 w-4 ${workday.hasRs ? "text-montron-primary" : "text-montron-contrast/60"}`}
+                        className={`h-4 w-4 ${workday.rsCount > 0 ? "text-montron-primary" : "text-montron-contrast/60"}`}
                       />
-                      {workday.hasRs ? "Regieschein vorhanden" : "Kein Regieschein"}
+                      <span>Regiescheine: {workday.rsCount}</span>
                     </div>
                     <div className="flex items-center gap-2 text-montron-text dark:text-white">
                       <MapPin className={`h-4 w-4 ${workday.hasStreetwatch ? "text-montron-primary" : "text-montron-contrast/60"}`} />
-                      {workday.hasStreetwatch ? "Streetwatch-Daten vorhanden" : "Keine Streetwatch-Daten"}
+                      <span>{workday.hasStreetwatch ? "Streetwatch-Daten vorhanden" : "Keine Streetwatch-Daten"}</span>
                     </div>
                   </div>
                 </CardContent>
@@ -200,7 +200,7 @@ export default function DatumsauswahlPage() {
                   <Button
                     variant="outline"
                     className="w-full border-montron-contrast/30 hover:text-montron-primary hover:bg-montron-extra dark:border-montron-contrast/50 dark:hover:bg-montron-contrast/20"
-                    onClick={() => router.push(`/mitarbeiter/${employeeId}/tagesdetail/${workday.id}`)}
+                    onClick={() => router.push(`/mitarbeiter/${employeeId}/tagesdetail/${workday.date}`)}
                   >
                     Details anzeigen
                   </Button>

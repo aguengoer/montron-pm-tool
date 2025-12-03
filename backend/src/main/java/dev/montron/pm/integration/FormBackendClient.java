@@ -1,11 +1,13 @@
 package dev.montron.pm.integration;
 
 import com.fasterxml.jackson.annotation.JsonProperty;
+import dev.montron.pm.integration.config.FormApiConfigService;
 import java.time.Instant;
 import java.time.LocalDate;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
+import org.springframework.context.annotation.Lazy;
 import org.springframework.http.HttpHeaders;
 import org.springframework.security.core.Authentication;
 import org.springframework.security.core.context.SecurityContextHolder;
@@ -53,23 +55,64 @@ public class FormBackendClient {
             int totalPages) {
     }
 
+    public record FormSubmissionListItem(
+            String id,
+            String formId,
+            String formName,
+            Integer formVersion,
+            String employeeId,
+            String employeeUsername,
+            Instant submittedAt,
+            Boolean hasAttachments) {
+    }
+
+    public record FormSubmissionPage(
+            List<FormSubmissionListItem> content,
+            @JsonProperty("number") int page,
+            int size,
+            long totalElements,
+            int totalPages) {
+    }
+
     private final WebClient webClient;
     private final FormApiProperties properties;
+    private final FormApiConfigService configService;
 
-    public FormBackendClient(WebClient formApiWebClient, FormApiProperties properties) {
+    public FormBackendClient(
+            WebClient formApiWebClient,
+            FormApiProperties properties,
+            @Lazy FormApiConfigService configService) {
         this.webClient = formApiWebClient;
         this.properties = properties;
+        this.configService = configService;
     }
 
     private String resolveBearerToken() {
+        // Priority 1: Service token from database config (per-company configuration)
+        Optional<String> dbServiceToken = configService.getServiceToken();
+        if (dbServiceToken.isPresent() && !dbServiceToken.get().isBlank()) {
+            return "Bearer " + dbServiceToken.get();
+        }
+
+        // Priority 2: Service token from environment/properties (fallback)
+        if (properties.getServiceToken() != null && !properties.getServiceToken().isBlank()) {
+            return "Bearer " + properties.getServiceToken();
+        }
+
+        // Priority 3: Legacy technical token (backward compatibility)
+        if (properties.getTechnicalToken() != null && !properties.getTechnicalToken().isBlank()) {
+            return "Bearer " + properties.getTechnicalToken();
+        }
+
+        // Priority 4: User JWT token (for user-initiated requests via frontend)
         Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
         if (authentication instanceof JwtAuthenticationToken jwtAuthentication) {
             return "Bearer " + jwtAuthentication.getToken().getTokenValue();
         }
 
-        return Optional.ofNullable(properties.getTechnicalToken())
-                .map(token -> "Bearer " + token)
-                .orElseThrow(() -> new IllegalStateException("No authentication token available for Form backend call"));
+        throw new IllegalStateException(
+                "No authentication token available for Form backend call. " +
+                "Please configure the service token in Settings or via form-api.service-token environment variable.");
     }
 
     public List<FormEmployeeDto> fetchEmployeesIntegration(Instant updatedAfter) {
@@ -190,6 +233,42 @@ public class FormBackendClient {
                 .header(HttpHeaders.AUTHORIZATION, resolveBearerToken())
                 .retrieve()
                 .bodyToMono(FormEmployeeResponse.class)
+                .block();
+    }
+
+    public FormSubmissionPage listSubmissions(
+            Instant from,
+            Instant to,
+            UUID employeeId,
+            UUID formId,
+            Boolean hasAttachments,
+            int page,
+            int size) {
+        return webClient.get()
+                .uri(uriBuilder -> {
+                    var builder = uriBuilder.path("/submissions")
+                            .queryParam("page", page)
+                            .queryParam("size", size);
+                    if (from != null) {
+                        builder.queryParam("from", from.toString());
+                    }
+                    if (to != null) {
+                        builder.queryParam("to", to.toString());
+                    }
+                    if (employeeId != null) {
+                        builder.queryParam("employeeId", employeeId.toString());
+                    }
+                    if (formId != null) {
+                        builder.queryParam("formId", formId.toString());
+                    }
+                    if (hasAttachments != null) {
+                        builder.queryParam("hasAttachments", hasAttachments);
+                    }
+                    return builder.build();
+                })
+                .header(HttpHeaders.AUTHORIZATION, resolveBearerToken())
+                .retrieve()
+                .bodyToMono(FormSubmissionPage.class)
                 .block();
     }
 }

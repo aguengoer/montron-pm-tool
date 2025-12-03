@@ -59,7 +59,23 @@ security:
 
 form-api:
   base-url: ${FORM_API_BASE_URL:http://localhost:8090/api}
+  # Service token for service-to-service communication (recommended for production)
+  # Generate tokens in the Form Builder admin UI: /service-tokens
+  service-token: ${FORM_API_SERVICE_TOKEN:}
+  # Legacy technical token (deprecated, use service-token instead)
+  technical-token: ${FORM_API_TECHNICAL_TOKEN:}
 
 pm:
   export:
     base-directory: ${PM_EXPORT_BASE_DIR:/mnt/montron-export}
+  # Encryption key for sensitive data (required for setup wizard)
+  secret-key: ${PM_SECRET_KEY:su_0V7Vkk-FeIGtmwztyRiPavcELCajCSYR9Mx-creA}
+  # Optional bootstrap secret for additional setup security (on-prem installations)
+  bootstrap-secret: ${PM_BOOTSTRAP_SECRET:}
+
+mobile:
+  api:
+    # Base URL of the Mobile App backend for setup and token validation
+    base-url: ${MOBILE_API_BASE_URL:http://localhost:8090/api}
+    # Timeout for Mobile API calls in milliseconds
+    timeout-ms: ${MOBILE_API_TIMEOUT_MS:30000}

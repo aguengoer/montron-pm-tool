@@ -30,6 +30,10 @@ logging:
 
 form-api:
   base-url: ${FORM_API_BASE_URL:http://localhost:8090/api}
+  # Service token for service-to-service communication (recommended)
+  service-token: ${FORM_API_SERVICE_TOKEN:}
+  # Legacy technical token (deprecated, use service-token instead)
+  technical-token: ${FORM_API_TECHNICAL_TOKEN:}
 
 pm:
   export:
