@@ -24,10 +24,6 @@ public class TagesdetailService {
     private final FormBackendClient formBackendClient;
     private final EmployeeService employeeService;
 
-    // Form type constants (these should match the form names in mobile app)
-    private static final String FORM_TYPE_TAGESBERICHT = "Tagesbericht";
-    private static final String FORM_TYPE_REGIESCHEIN = "Regieschein";
-
     public TagesdetailService(FormBackendClient formBackendClient, EmployeeService employeeService) {
         this.formBackendClient = formBackendClient;
         this.employeeService = employeeService;
@@ -47,14 +43,26 @@ public class TagesdetailService {
         var submissionsPage = formBackendClient.listSubmissions(
                 from, to, employeeId, null, null, 0, 100);
 
+        log.debug("Found {} submissions for date {}", submissionsPage.content().size(), date);
+
         // Separate by form type
         FormWithSubmissionDto tagesbericht = null;
         List<FormWithSubmissionDto> regiescheine = new ArrayList<>();
 
         for (FormSubmissionListItem item : submissionsPage.content()) {
-            if (item.formName().equals(FORM_TYPE_TAGESBERICHT)) {
+            String formNameLower = item.formName().toLowerCase();
+            log.debug("Processing submission: id={}, formName={}", item.id(), item.formName());
+            
+            // Check if it's a Tagesbericht (case-insensitive, contains check)
+            // Matches: BAUTAGESBERICHT, Tagesbericht, tagesbericht, etc.
+            if (formNameLower.contains("tagesbericht") || formNameLower.contains("tb")) {
+                log.info("Found Tagesbericht: {}", item.formName());
                 tagesbericht = buildFormWithSubmission(item);
-            } else if (item.formName().equals(FORM_TYPE_REGIESCHEIN)) {
+            }
+            // Check if it's a Regieschein (case-insensitive, contains check)
+            // Matches: REGIESCHEIN, Regieschein, regieschein, etc.
+            else if (formNameLower.contains("regieschein") || formNameLower.contains("rs")) {
+                log.info("Found Regieschein: {}", item.formName());
                 regiescheine.add(buildFormWithSubmission(item));
             }
         }
