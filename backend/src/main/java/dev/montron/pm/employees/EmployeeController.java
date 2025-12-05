@@ -1,7 +1,9 @@
 package dev.montron.pm.employees;
 
 import jakarta.validation.Valid;
+import java.time.LocalDate;
 import java.util.UUID;
+import org.springframework.format.annotation.DateTimeFormat;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
@@ -20,9 +22,11 @@ import org.springframework.web.bind.annotation.RestController;
 public class EmployeeController {
 
     private final EmployeeService employeeService;
+    private final TagesdetailService tagesdetailService;
 
-    public EmployeeController(EmployeeService employeeService) {
+    public EmployeeController(EmployeeService employeeService, TagesdetailService tagesdetailService) {
         this.employeeService = employeeService;
+        this.tagesdetailService = tagesdetailService;
     }
 
     @GetMapping
@@ -67,5 +71,16 @@ public class EmployeeController {
     public ResponseEntity<Void> resetPassword(@PathVariable UUID id) {
         employeeService.resetPassword(id);
         return ResponseEntity.noContent().build();
+    }
+
+    /**
+     * Get complete Tagesdetail view data (3-column layout)
+     * GET /api/employees/{employeeId}/tagesdetail/{date}
+     */
+    @GetMapping("/{employeeId}/tagesdetail/{date}")
+    public TagesdetailResponse getTagesdetail(
+            @PathVariable UUID employeeId,
+            @PathVariable @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate date) {
+        return tagesdetailService.getTagesdetail(employeeId, date);
     }
 }

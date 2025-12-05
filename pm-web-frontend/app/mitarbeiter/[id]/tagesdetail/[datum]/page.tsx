@@ -1,77 +1,190 @@
 "use client"
 
-import { useMemo } from "react"
+import { useState, useCallback } from "react"
 import { useParams, useRouter } from "next/navigation"
 import { format } from "date-fns"
 import { de } from "date-fns/locale"
-import { ArrowLeft, FileText, Calendar, User, Paperclip } from "lucide-react"
+import { ArrowLeft, Save, CheckCircle, AlertCircle } from "lucide-react"
 
-import { useEmployee } from "@/hooks/useEmployee"
-import { useEmployeeSubmissions } from "@/hooks/useEmployeeSubmissions"
+import { useTagesdetail, useUpdateSubmission } from "@/hooks/useTagesdetail"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
-import { Badge } from "@/components/ui/badge"
 import { Spinner } from "@/components/ui/spinner"
-import { Separator } from "@/components/ui/separator"
+import { Alert, AlertDescription } from "@/components/ui/alert"
+import { DynamicFormRenderer } from "@/components/tagesdetail/DynamicFormRenderer"
+import { StreetwatchTable } from "@/components/tagesdetail/StreetwatchTable"
+import { ValidationPanel } from "@/components/tagesdetail/ValidationPanel"
+import { ValidationIssue } from "@/types/tagesdetail"
+import { useToast } from "@/hooks/use-toast"
 
 export default function TagesdetailPage() {
   const router = useRouter()
   const params = useParams<{ id: string; datum: string }>()
   const employeeId = params?.id ?? ""
   const dateString = params?.datum ?? "" // YYYY-MM-DD
+  const { toast } = useToast()
 
-  const { data: employee } = useEmployee(employeeId)
+  const { data: tagesdetail, isLoading, isError, refetch } = useTagesdetail(employeeId, dateString)
+  const updateMutation = useUpdateSubmission()
 
-  // Fetch submissions for this specific date
-  const {
-    data: workdays,
-    isLoading,
-    isError,
-  } = useEmployeeSubmissions({
-    employeeId,
-    from: dateString,
-    to: dateString,
-  })
+  // Track changes per submission
+  const [changes, setChanges] = useState<Record<string, Record<string, any>>>({})
+  const [isSaving, setIsSaving] = useState(false)
 
-  // Find submissions for the selected date
-  const submissions = useMemo(() => {
-    if (!workdays || workdays.length === 0) return []
-    const dayData = workdays.find((w) => w.date === dateString)
-    return dayData?.submissions ?? []
-  }, [workdays, dateString])
+  const formattedDate = dateString
+    ? format(new Date(dateString), "EEEE, dd.MM.yyyy", { locale: de })
+    : ""
 
-  const headerTitle = useMemo(() => {
-    if (!employee) return "Tagesdetail"
-    const lastName = employee.lastName ? employee.lastName.toUpperCase() : ""
-    return `${lastName} ${employee.firstName ?? ""}`.trim()
-  }, [employee])
+  const hasUnsavedChanges = Object.keys(changes).length > 0
 
-  const formattedDate = useMemo(() => {
-    try {
-      return format(new Date(dateString), "EEEE, dd.MM.yyyy", { locale: de })
-    } catch {
-      return dateString
+  const handleFieldChange = useCallback((submissionId: string, fieldId: string, value: any) => {
+    setChanges((prev) => ({
+      ...prev,
+      [submissionId]: {
+        ...(prev[submissionId] || {}),
+        [fieldId]: value,
+      },
+    }))
+  }, [])
+
+  const handleSave = async () => {
+    if (!hasUnsavedChanges) {
+      toast({
+        title: "Keine Änderungen",
+        description: "Es gibt keine ungespeicherten Änderungen.",
+      })
+      return
     }
-  }, [dateString])
+
+    setIsSaving(true)
+    try {
+      // Save all changes
+      for (const [submissionId, fields] of Object.entries(changes)) {
+        for (const [fieldId, value] of Object.entries(fields)) {
+          await updateMutation.mutateAsync({ submissionId, fieldId, value })
+        }
+      }
+
+      toast({
+        title: "Gespeichert",
+        description: "Alle Änderungen wurden erfolgreich gespeichert.",
+      })
+      
+      setChanges({})
+      refetch()
+    } catch (error) {
+      toast({
+        title: "Fehler",
+        description: "Fehler beim Speichern. Bitte versuche es erneut.",
+        variant: "destructive",
+      })
+    } finally {
+      setIsSaving(false)
+    }
+  }
+
+  const handleFreigeben = async () => {
+    // TODO: Implement approval workflow
+    toast({
+      title: "Freigabe",
+      description: "Freigabe-Funktion wird noch implementiert.",
+    })
+  }
+
+  const handleIssueClick = useCallback((issue: ValidationIssue) => {
+    const element = document.getElementById(issue.fieldId)
+    if (element) {
+      element.scrollIntoView({ behavior: "smooth", block: "center" })
+      element.focus()
+    }
+  }, [])
+
+  const handleDiscard = () => {
+    setChanges({})
+    toast({
+      title: "Verworfen",
+      description: "Alle Änderungen wurden verworfen.",
+    })
+  }
 
   return (
-    <div className="container mx-auto py-8 px-4">
+    <div className="container mx-auto py-8 px-4 max-w-[1800px]">
       {/* Header */}
       <Card className="mb-6 border-montron-contrast/20 dark:border-montron-contrast/50 dark:bg-montron-text">
-        <CardHeader className="flex flex-row items-center gap-4">
-          <Button
-            variant="outline"
-            size="icon"
-            className="border-montron-contrast/30 text-montron-contrast dark:text-montron-extra dark:border-montron-contrast/50"
-            onClick={() => router.push(`/mitarbeiter/${employeeId}/datumsauswahl`)}
-          >
-            <ArrowLeft className="h-4 w-4" />
-            <span className="sr-only">Zurück</span>
-          </Button>
-          <div>
-            <h1 className="text-3xl font-bold text-montron-text dark:text-white">{headerTitle}</h1>
-            <p className="text-lg text-montron-contrast dark:text-montron-extra mt-1">{formattedDate}</p>
+        <CardHeader>
+          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+            <div className="flex items-center gap-4">
+              <Button
+                variant="outline"
+                size="icon"
+                className="border-montron-contrast/30 text-montron-contrast dark:text-montron-extra dark:border-montron-contrast/50 flex-shrink-0"
+                onClick={() => router.push(`/mitarbeiter/${employeeId}/datumsauswahl`)}
+              >
+                <ArrowLeft className="h-4 w-4" />
+                <span className="sr-only">Zurück</span>
+              </Button>
+              <div>
+                <h1 className="text-2xl sm:text-3xl font-bold text-montron-text dark:text-white">
+                  {tagesdetail?.employeeName || "Laden..."}
+                </h1>
+                <p className="text-base sm:text-lg text-montron-contrast dark:text-montron-extra mt-1">
+                  {formattedDate}
+                </p>
+              </div>
+            </div>
+
+            <div className="flex gap-2">
+              {hasUnsavedChanges && (
+                <Button
+                  variant="outline"
+                  onClick={handleDiscard}
+                  className="border-montron-contrast/30 hover:border-red-500 hover:text-red-500"
+                  disabled={isSaving || isLoading}
+                >
+                  Verwerfen
+                </Button>
+              )}
+              <Button
+                variant="outline"
+                onClick={handleSave}
+                className="border-montron-contrast/30 hover:text-montron-primary hover:border-montron-primary"
+                disabled={!hasUnsavedChanges || isSaving || isLoading}
+              >
+                <Save className="h-4 w-4 mr-2" />
+                Speichern
+                {hasUnsavedChanges && (
+                  <span className="ml-2 px-2 py-0.5 bg-yellow-500 text-white text-xs rounded-full">
+                    {Object.keys(changes).length}
+                  </span>
+                )}
+              </Button>
+              <Button
+                onClick={handleFreigeben}
+                className="bg-montron-primary hover:bg-montron-primary/90"
+                disabled={hasUnsavedChanges || isSaving || isLoading}
+              >
+                <CheckCircle className="h-4 w-4 mr-2" />
+                Freigeben
+              </Button>
+            </div>
           </div>
+
+          {/* Unsaved changes alert */}
+          {hasUnsavedChanges && (
+            <Alert className="mt-4 border-yellow-500 bg-yellow-50 dark:bg-yellow-950">
+              <AlertCircle className="h-4 w-4 text-yellow-600" />
+              <AlertDescription className="text-yellow-800 dark:text-yellow-200">
+                Du hast ungespeicherte Änderungen. Bitte speichere oder verwerfe sie.
+              </AlertDescription>
+            </Alert>
+          )}
+
+          {/* Old values note */}
+          {tagesdetail && (
+            <div className="mt-4 text-xs text-montron-contrast dark:text-montron-extra italic">
+              Alte Werte bleiben durchgestrichen sichtbar, bis die Änderungen freigegeben werden.
+            </div>
+          )}
         </CardHeader>
       </Card>
 
@@ -79,86 +192,107 @@ export default function TagesdetailPage() {
       {isLoading ? (
         <div className="flex items-center gap-2 text-montron-contrast dark:text-montron-extra">
           <Spinner className="h-4 w-4" />
-          <span>Lade Einträge…</span>
+          <span>Lade Tagesdetail…</span>
         </div>
       ) : isError ? (
-        <div className="text-sm text-red-500">Fehler beim Laden der Einträge. Bitte versuche es erneut.</div>
-      ) : submissions.length === 0 ? (
+        <Card className="border-red-500/50 dark:bg-montron-text">
+          <CardContent className="p-8 text-center">
+            <p className="text-red-500">
+              Fehler beim Laden der Daten. Bitte versuche es erneut.
+            </p>
+            <Button
+              variant="outline"
+              onClick={() => refetch()}
+              className="mt-4"
+            >
+              Erneut versuchen
+            </Button>
+          </CardContent>
+        </Card>
+      ) : !tagesdetail ? (
         <Card className="border-montron-contrast/20 dark:border-montron-contrast/50 dark:bg-montron-text">
           <CardContent className="p-8 text-center">
             <p className="text-montron-contrast dark:text-montron-extra">
-              Keine Einträge für diesen Tag gefunden.
+              Keine Daten für diesen Tag gefunden.
             </p>
           </CardContent>
         </Card>
       ) : (
-        <div className="space-y-4">
-          {submissions.map((submission) => (
-            <Card
-              key={submission.id}
-              className="border-montron-contrast/20 dark:border-montron-contrast/50 dark:bg-montron-text"
-            >
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+          {/* Column 1: Tagesbericht */}
+          <div className="col-span-1">
+            <Card className="border-montron-contrast/20 dark:border-montron-contrast/50 dark:bg-montron-text h-full">
               <CardHeader>
-                <div className="flex items-start justify-between">
-                  <div className="flex items-center gap-3">
-                    <FileText className="h-5 w-5 text-montron-primary" />
-                    <div>
-                      <CardTitle className="text-montron-text dark:text-white">{submission.formName}</CardTitle>
-                      <p className="text-sm text-montron-contrast dark:text-montron-extra mt-1">
-                        Version {submission.formVersion}
-                      </p>
-                    </div>
-                  </div>
-                  <Badge variant="default" className="bg-montron-primary">
-                    Freigegeben
-                  </Badge>
-                </div>
+                <CardTitle className="text-lg flex items-center gap-2 text-montron-text dark:text-white">
+                  📋 Tagesbericht
+                </CardTitle>
               </CardHeader>
               <CardContent>
-                <div className="space-y-3">
-                  <Separator className="bg-montron-contrast/20" />
-                  
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-sm">
-                    <div className="flex items-center gap-2 text-montron-text dark:text-white">
-                      <Calendar className="h-4 w-4 text-montron-contrast dark:text-montron-extra" />
-                      <span className="font-medium">Eingereicht:</span>
-                      <span>
-                        {format(new Date(submission.submittedAt), "dd.MM.yyyy HH:mm", { locale: de })}
-                      </span>
-                    </div>
-
-                    <div className="flex items-center gap-2 text-montron-text dark:text-white">
-                      <User className="h-4 w-4 text-montron-contrast dark:text-montron-extra" />
-                      <span className="font-medium">Mitarbeiter:</span>
-                      <span>{submission.employeeUsername}</span>
-                    </div>
-
-                    <div className="flex items-center gap-2 text-montron-text dark:text-white">
-                      <Paperclip className="h-4 w-4 text-montron-contrast dark:text-montron-extra" />
-                      <span className="font-medium">Anhänge:</span>
-                      <span>{submission.hasAttachments ? "Ja" : "Nein"}</span>
-                    </div>
-                  </div>
-
-                  <Separator className="bg-montron-contrast/20" />
-
-                  <div className="flex gap-2">
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      className="border-montron-contrast/30 hover:text-montron-primary hover:bg-montron-extra dark:border-montron-contrast/50 dark:hover:bg-montron-contrast/20"
-                      onClick={() => {
-                        // TODO: Implement detail view for individual submission
-                        alert(`Submission ID: ${submission.id}\nForm: ${submission.formName}`)
-                      }}
-                    >
-                      Details anzeigen
-                    </Button>
-                  </div>
-                </div>
+                {tagesdetail.tagesbericht ? (
+                  <DynamicFormRenderer
+                    formWithSubmission={tagesdetail.tagesbericht}
+                    editMode={true}
+                    showChanges={hasUnsavedChanges}
+                    onFieldChange={(fieldId, value) => {
+                      handleFieldChange(tagesdetail.tagesbericht!.submissionId, fieldId, value)
+                    }}
+                  />
+                ) : (
+                  <p className="text-sm text-montron-contrast dark:text-montron-extra">
+                    Kein Tagesbericht vorhanden
+                  </p>
+                )}
               </CardContent>
             </Card>
-          ))}
+          </div>
+
+          {/* Column 2: Regiescheine */}
+          <div className="col-span-1">
+            <Card className="border-montron-contrast/20 dark:border-montron-contrast/50 dark:bg-montron-text h-full">
+              <CardHeader>
+                <CardTitle className="text-lg flex items-center gap-2 text-montron-text dark:text-white">
+                  📄 Regiescheine
+                </CardTitle>
+              </CardHeader>
+              <CardContent>
+                {tagesdetail.regiescheine.length > 0 ? (
+                  <div className="space-y-6">
+                    {tagesdetail.regiescheine.map((rs, idx) => (
+                      <div key={rs.submissionId}>
+                        {idx > 0 && (
+                          <div className="border-t border-montron-contrast/20 my-4" />
+                        )}
+                        <div className="text-sm font-medium text-montron-contrast dark:text-montron-extra mb-3">
+                          Regieschein #{idx + 1}
+                        </div>
+                        <DynamicFormRenderer
+                          formWithSubmission={rs}
+                          editMode={true}
+                          showChanges={hasUnsavedChanges}
+                          onFieldChange={(fieldId, value) => {
+                            handleFieldChange(rs.submissionId, fieldId, value)
+                          }}
+                        />
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <p className="text-sm text-montron-contrast dark:text-montron-extra">
+                    Keine Regiescheine vorhanden
+                  </p>
+                )}
+              </CardContent>
+            </Card>
+          </div>
+
+          {/* Column 3: Streetwatch + Prüfhinweise */}
+          <div className="col-span-1 space-y-6">
+            <StreetwatchTable data={tagesdetail.streetwatch} />
+            <ValidationPanel
+              issues={tagesdetail.validationIssues}
+              onIssueClick={handleIssueClick}
+            />
+          </div>
         </div>
       )}
     </div>

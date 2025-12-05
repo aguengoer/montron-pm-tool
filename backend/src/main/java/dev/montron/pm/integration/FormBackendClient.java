@@ -271,4 +271,68 @@ public class FormBackendClient {
                 .bodyToMono(FormSubmissionPage.class)
                 .block();
     }
+
+    /**
+     * Get full submission details including all form data
+     */
+    public record SubmissionDetail(
+            String id,
+            String formId,
+            String formName,
+            Integer formVersion,
+            String employeeId,
+            String employeeUsername,
+            Instant submittedAt,
+            Boolean hasAttachments,
+            java.util.Map<String, Object> data,
+            String status
+    ) {}
+
+    public SubmissionDetail getSubmissionDetail(UUID submissionId) {
+        return webClient.get()
+                .uri("/submissions/{id}", submissionId)
+                .header(HttpHeaders.AUTHORIZATION, resolveBearerToken())
+                .retrieve()
+                .bodyToMono(SubmissionDetail.class)
+                .block();
+    }
+
+    /**
+     * Get form definition (structure/schema)
+     */
+    public record FormDefinition(
+            String id,
+            String name,
+            String description,
+            Integer version,
+            java.util.List<FormField> fields
+    ) {}
+
+    public record FormField(
+            String id,
+            String label,
+            String type,
+            Boolean required,
+            String placeholder,
+            java.util.List<String> options,
+            ValidationRules validation
+    ) {}
+
+    public record ValidationRules(
+            Integer minLength,
+            Integer maxLength,
+            Integer min,
+            Integer max,
+            String pattern,
+            String errorMessage
+    ) {}
+
+    public FormDefinition getFormDefinition(UUID formId) {
+        return webClient.get()
+                .uri("/forms/{id}", formId)
+                .header(HttpHeaders.AUTHORIZATION, resolveBearerToken())
+                .retrieve()
+                .bodyToMono(FormDefinition.class)
+                .block();
+    }
 }
