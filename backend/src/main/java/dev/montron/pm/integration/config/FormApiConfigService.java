@@ -2,8 +2,10 @@ package dev.montron.pm.integration.config;
 
 import dev.montron.pm.common.CurrentUser;
 import dev.montron.pm.common.CurrentUserService;
+import dev.montron.pm.setup.SetupService;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.context.annotation.Lazy;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -21,14 +23,17 @@ public class FormApiConfigService {
     private final FormApiConfigRepository repository;
     private final TokenEncryptionService encryptionService;
     private final CurrentUserService currentUserService;
+    private final SetupService setupService;
 
     public FormApiConfigService(
             FormApiConfigRepository repository,
             TokenEncryptionService encryptionService,
-            CurrentUserService currentUserService) {
+            CurrentUserService currentUserService,
+            @Lazy SetupService setupService) {
         this.repository = repository;
         this.encryptionService = encryptionService;
         this.currentUserService = currentUserService;
+        this.setupService = setupService;
     }
 
     /**
@@ -51,11 +56,25 @@ public class FormApiConfigService {
 
     /**
      * Get the decrypted service token for the current company.
-     * Returns empty if not configured.
+     * First checks the per-company config (form_api_config table).
+     * Falls back to the setup wizard token (mobile_link table) if not found.
+     * Returns empty if not configured in either place.
      */
     @Transactional(readOnly = true)
     public Optional<String> getServiceToken() {
-        return getConfig().map(FormApiConfigDto::serviceToken);
+        // Priority 1: Check per-company config (Settings UI)
+        Optional<String> companyToken = getConfig().map(FormApiConfigDto::serviceToken);
+        if (companyToken.isPresent()) {
+            log.debug("Using service token from company config");
+            return companyToken;
+        }
+        
+        // Priority 2: Fall back to setup wizard token (if available)
+        Optional<String> setupToken = setupService.getServiceToken();
+        if (setupToken.isPresent()) {
+            log.debug("Using service token from setup wizard (mobile_link)");
+        }
+        return setupToken;
     }
 
     /**
