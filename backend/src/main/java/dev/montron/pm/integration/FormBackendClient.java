@@ -285,7 +285,8 @@ public class FormBackendClient {
             Instant submittedAt,
             Boolean hasAttachments,
             java.util.Map<String, Object> data,
-            String status
+            String status,
+            String pdfUrl  // Presigned URL to download PDF from S3
     ) {}
 
     public SubmissionDetail getSubmissionDetail(UUID submissionId) {

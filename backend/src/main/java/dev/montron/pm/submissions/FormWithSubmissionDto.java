@@ -23,7 +23,8 @@ public record FormWithSubmissionDto(
         String formVersion,
         Instant submittedAt,
         String submittedBy,
-        SubmissionStatus status
+        SubmissionStatus status,
+        String pdfUrl  // Presigned URL to download PDF from S3
 ) {
     public enum SubmissionStatus {
         DRAFT,

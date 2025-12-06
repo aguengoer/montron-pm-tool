@@ -4,7 +4,7 @@ import { useState, useCallback } from "react"
 import { useParams, useRouter } from "next/navigation"
 import { format } from "date-fns"
 import { de } from "date-fns/locale"
-import { ArrowLeft, Save, CheckCircle, AlertCircle } from "lucide-react"
+import { ArrowLeft, Save, CheckCircle, AlertCircle, Download } from "lucide-react"
 
 import { useTagesdetail, useUpdateSubmission } from "@/hooks/useTagesdetail"
 import { Button } from "@/components/ui/button"
@@ -120,6 +120,20 @@ export default function TagesdetailPage() {
   const handleCancelEdit = () => {
     setChanges({})
     setIsEditMode(false)
+  }
+
+  const handleDownloadPdf = (pdfUrl: string, formName: string) => {
+    if (!pdfUrl) {
+      toast({
+        title: "Fehler",
+        description: "PDF-URL nicht verfügbar",
+        variant: "destructive",
+      })
+      return
+    }
+    
+    // Open PDF in new tab (presigned URL allows direct access)
+    window.open(pdfUrl, '_blank')
   }
 
   return (
@@ -253,9 +267,25 @@ export default function TagesdetailPage() {
           <div className="col-span-1">
             <Card className="border-montron-contrast/20 dark:border-montron-contrast/50 dark:bg-montron-text h-full">
               <CardHeader>
-                <CardTitle className="text-lg flex items-center gap-2 text-montron-text dark:text-white">
-                  📋 Tagesbericht
-                </CardTitle>
+                <div className="flex items-center justify-between">
+                  <CardTitle className="text-lg flex items-center gap-2 text-montron-text dark:text-white">
+                    📋 Tagesbericht
+                  </CardTitle>
+                  {tagesdetail.tagesbericht?.pdfUrl && (
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => handleDownloadPdf(
+                        tagesdetail.tagesbericht!.pdfUrl,
+                        tagesdetail.tagesbericht!.formDefinition.name
+                      )}
+                      className="border-montron-contrast/30 text-montron-contrast dark:text-montron-extra hover:text-montron-primary hover:border-montron-primary"
+                    >
+                      <Download className="h-4 w-4 mr-2" />
+                      PDF
+                    </Button>
+                  )}
+                </div>
               </CardHeader>
               <CardContent>
                 {tagesdetail.tagesbericht ? (
@@ -292,8 +322,21 @@ export default function TagesdetailPage() {
                         {idx > 0 && (
                           <div className="border-t border-montron-contrast/20 my-4" />
                         )}
-                        <div className="text-sm font-medium text-montron-contrast dark:text-montron-extra mb-3">
-                          Regieschein #{idx + 1}
+                        <div className="flex items-center justify-between mb-3">
+                          <div className="text-sm font-medium text-montron-contrast dark:text-montron-extra">
+                            Regieschein #{idx + 1}
+                          </div>
+                          {rs.pdfUrl && (
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              onClick={() => handleDownloadPdf(rs.pdfUrl, rs.formDefinition.name)}
+                              className="border-montron-contrast/30 text-montron-contrast dark:text-montron-extra hover:text-montron-primary hover:border-montron-primary"
+                            >
+                              <Download className="h-4 w-4 mr-2" />
+                              PDF
+                            </Button>
+                          )}
                         </div>
                         <DynamicFormRenderer
                           formWithSubmission={rs}

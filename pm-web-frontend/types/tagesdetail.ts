@@ -50,6 +50,7 @@ export interface FormWithSubmission {
   submittedAt: string
   submittedBy: string
   status: "DRAFT" | "SUBMITTED" | "APPROVED" | "REJECTED"
+  pdfUrl: string  // Presigned URL to download PDF from S3
 }
 
 export interface StreetwatchEntry {

@@ -142,7 +142,8 @@ public class TagesdetailService {
                 String.valueOf(formDef.version()),
                 detail.submittedAt(),
                 detail.employeeUsername(),
-                mapStatus(detail.status())
+                mapStatus(detail.status()),
+                detail.pdfUrl() // Presigned URL for PDF download
         );
     }
 
