@@ -27,7 +27,8 @@ export default function TagesdetailPage() {
   const { data: tagesdetail, isLoading, isError, refetch } = useTagesdetail(employeeId, dateString)
   const updateMutation = useUpdateSubmission()
 
-  // Track changes per submission
+  // Track edit mode and changes
+  const [isEditMode, setIsEditMode] = useState(false)
   const [changes, setChanges] = useState<Record<string, Record<string, any>>>({})
   const [isSaving, setIsSaving] = useState(false)
 
@@ -65,13 +66,17 @@ export default function TagesdetailPage() {
         }
       }
 
+      // Clear changes and exit edit mode BEFORE refetch
+      setChanges({})
+      setIsEditMode(false)
+
+      // Refetch data from server (with loading state)
+      await refetch()
+
       toast({
         title: "Gespeichert",
         description: "Alle Änderungen wurden erfolgreich gespeichert.",
       })
-      
-      setChanges({})
-      refetch()
     } catch (error) {
       toast({
         title: "Fehler",
@@ -101,10 +106,20 @@ export default function TagesdetailPage() {
 
   const handleDiscard = () => {
     setChanges({})
+    setIsEditMode(false)
     toast({
       title: "Verworfen",
       description: "Alle Änderungen wurden verworfen.",
     })
+  }
+
+  const handleEdit = () => {
+    setIsEditMode(true)
+  }
+
+  const handleCancelEdit = () => {
+    setChanges({})
+    setIsEditMode(false)
   }
 
   return (
@@ -134,33 +149,48 @@ export default function TagesdetailPage() {
             </div>
 
             <div className="flex gap-2">
-              {hasUnsavedChanges && (
+              {isEditMode ? (
+                // Edit mode: Show Cancel and Save buttons
+                <>
+                  <Button
+                    variant="outline"
+                    onClick={handleCancelEdit}
+                    className="border-montron-contrast/30 hover:border-red-500 hover:text-red-500"
+                    disabled={isSaving || isLoading}
+                  >
+                    Abbrechen
+                  </Button>
+                  <Button
+                    variant="outline"
+                    onClick={handleSave}
+                    className="border-montron-contrast/30 hover:text-montron-primary hover:border-montron-primary"
+                    disabled={!hasUnsavedChanges || isSaving || isLoading}
+                  >
+                    <Save className="h-4 w-4 mr-2" />
+                    Speichern
+                    {hasUnsavedChanges && (
+                      <span className="ml-2 px-2 py-0.5 bg-yellow-500 text-white text-xs rounded-full">
+                        {Object.keys(changes).length}
+                      </span>
+                    )}
+                  </Button>
+                </>
+              ) : (
+                // Read-only mode: Show Edit button
                 <Button
+                  onClick={handleEdit}
                   variant="outline"
-                  onClick={handleDiscard}
-                  className="border-montron-contrast/30 hover:border-red-500 hover:text-red-500"
-                  disabled={isSaving || isLoading}
+                  className="border-montron-contrast/30 hover:text-montron-primary hover:border-montron-primary"
+                  disabled={isLoading}
                 >
-                  Verwerfen
+                  Bearbeiten
                 </Button>
               )}
-              <Button
-                variant="outline"
-                onClick={handleSave}
-                className="border-montron-contrast/30 hover:text-montron-primary hover:border-montron-primary"
-                disabled={!hasUnsavedChanges || isSaving || isLoading}
-              >
-                <Save className="h-4 w-4 mr-2" />
-                Speichern
-                {hasUnsavedChanges && (
-                  <span className="ml-2 px-2 py-0.5 bg-yellow-500 text-white text-xs rounded-full">
-                    {Object.keys(changes).length}
-                  </span>
-                )}
-              </Button>
+              
+              {/* Freigeben button - ALWAYS VISIBLE */}
               <Button
                 onClick={handleFreigeben}
-                className="bg-montron-primary hover:bg-montron-primary/90"
+                className="bg-green-600 hover:bg-green-700 text-white"
                 disabled={hasUnsavedChanges || isSaving || isLoading}
               >
                 <CheckCircle className="h-4 w-4 mr-2" />
@@ -169,8 +199,8 @@ export default function TagesdetailPage() {
             </div>
           </div>
 
-          {/* Unsaved changes alert */}
-          {hasUnsavedChanges && (
+          {/* Unsaved changes alert - only in edit mode */}
+          {isEditMode && hasUnsavedChanges && (
             <Alert className="mt-4 border-yellow-500 bg-yellow-50 dark:bg-yellow-950">
               <AlertCircle className="h-4 w-4 text-yellow-600" />
               <AlertDescription className="text-yellow-800 dark:text-yellow-200">
@@ -179,20 +209,20 @@ export default function TagesdetailPage() {
             </Alert>
           )}
 
-          {/* Old values note */}
-          {tagesdetail && (
+          {/* Old values note - show when there are corrections */}
+          {tagesdetail && (tagesdetail.tagesbericht?.hasChanges || tagesdetail.regiescheine.some(rs => rs.hasChanges)) && (
             <div className="mt-4 text-xs text-montron-contrast dark:text-montron-extra italic">
-              Alte Werte bleiben durchgestrichen sichtbar, bis die Änderungen freigegeben werden.
+              Korrigierte Felder zeigen den Originalwert durchgestrichen darunter.
             </div>
           )}
         </CardHeader>
       </Card>
 
       {/* Content */}
-      {isLoading ? (
+      {isLoading || isSaving ? (
         <div className="flex items-center gap-2 text-montron-contrast dark:text-montron-extra">
           <Spinner className="h-4 w-4" />
-          <span>Lade Tagesdetail…</span>
+          <span>{isSaving ? "Speichere Änderungen…" : "Lade Tagesdetail…"}</span>
         </div>
       ) : isError ? (
         <Card className="border-red-500/50 dark:bg-montron-text">
@@ -231,8 +261,8 @@ export default function TagesdetailPage() {
                 {tagesdetail.tagesbericht ? (
                   <DynamicFormRenderer
                     formWithSubmission={tagesdetail.tagesbericht}
-                    editMode={true}
-                    showChanges={hasUnsavedChanges}
+                    editMode={isEditMode}
+                    pendingChanges={changes[tagesdetail.tagesbericht.submissionId] || {}}
                     onFieldChange={(fieldId, value) => {
                       handleFieldChange(tagesdetail.tagesbericht!.submissionId, fieldId, value)
                     }}
@@ -267,8 +297,8 @@ export default function TagesdetailPage() {
                         </div>
                         <DynamicFormRenderer
                           formWithSubmission={rs}
-                          editMode={true}
-                          showChanges={hasUnsavedChanges}
+                          editMode={isEditMode}
+                          pendingChanges={changes[rs.submissionId] || {}}
                           onFieldChange={(fieldId, value) => {
                             handleFieldChange(rs.submissionId, fieldId, value)
                           }}

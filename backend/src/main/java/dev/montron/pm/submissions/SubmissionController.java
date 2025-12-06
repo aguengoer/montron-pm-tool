@@ -1,13 +1,14 @@
 package dev.montron.pm.submissions;
 
+import dev.montron.pm.integration.FormBackendClient;
+
 import java.time.Instant;
+import java.util.Map;
 import java.util.UUID;
 import org.springframework.format.annotation.DateTimeFormat;
 import org.springframework.security.access.prepost.PreAuthorize;
-import org.springframework.web.bind.annotation.GetMapping;
-import org.springframework.web.bind.annotation.RequestMapping;
-import org.springframework.web.bind.annotation.RequestParam;
-import org.springframework.web.bind.annotation.RestController;
+import org.springframework.web.bind.annotation.*;
+import org.springframework.http.ResponseEntity;
 
 @RestController
 @RequestMapping("/api/submissions")
@@ -15,9 +16,11 @@ import org.springframework.web.bind.annotation.RestController;
 public class SubmissionController {
 
     private final SubmissionService submissionService;
+    private final FormBackendClient formBackendClient;
 
-    public SubmissionController(SubmissionService submissionService) {
+    public SubmissionController(SubmissionService submissionService, FormBackendClient formBackendClient) {
         this.submissionService = submissionService;
+        this.formBackendClient = formBackendClient;
     }
 
     @GetMapping
@@ -40,5 +43,15 @@ public class SubmissionController {
             @RequestParam String date) {
         
         return submissionService.listSubmissionsByDate(employeeId, date);
+    }
+
+    @PatchMapping("/{id}")
+    public ResponseEntity<?> updateSubmission(
+            @PathVariable UUID id,
+            @RequestBody Map<String, Object> fieldUpdates) {
+        
+        // Save corrections in PM tool database (NOT in mobile app!)
+        submissionService.saveFieldCorrections(id, fieldUpdates);
+        return ResponseEntity.ok(Map.of("success", true, "updatedFields", fieldUpdates.size()));
     }
 }

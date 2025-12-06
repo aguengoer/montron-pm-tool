@@ -335,4 +335,17 @@ public class FormBackendClient {
                 .bodyToMono(FormDefinition.class)
                 .block();
     }
+
+    /**
+     * Update submission fields
+     */
+    public SubmissionDetail updateSubmission(UUID submissionId, java.util.Map<String, Object> fieldUpdates) {
+        return webClient.patch()
+                .uri("/submissions/{id}", submissionId)
+                .header(HttpHeaders.AUTHORIZATION, resolveBearerToken())
+                .bodyValue(fieldUpdates)
+                .retrieve()
+                .bodyToMono(SubmissionDetail.class)
+                .block();
+    }
 }

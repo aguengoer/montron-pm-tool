@@ -13,6 +13,7 @@ interface DynamicFormRendererProps {
   editMode?: boolean
   showChanges?: boolean
   onFieldChange?: (fieldId: string, value: any) => void
+  pendingChanges?: Record<string, any>  // Unsaved changes for this submission
 }
 
 export function DynamicFormRenderer({
@@ -20,13 +21,20 @@ export function DynamicFormRenderer({
   editMode = false,
   showChanges = false,
   onFieldChange,
+  pendingChanges = {},
 }: DynamicFormRendererProps) {
   const { formDefinition, data, originalData } = formWithSubmission
 
   const renderField = (field: FormField) => {
-    const currentValue = data[field.id]
+    // Merge pending changes into current value for display
+    const displayValue = field.id in pendingChanges ? pendingChanges[field.id] : data[field.id]
     const originalValue = originalData?.[field.id]
-    const hasChanged = showChanges && currentValue !== originalValue
+    
+    // Check if value differs from original (saved correction exists)
+    const hasSavedCorrection = data[field.id] !== originalValue
+    
+    // Check if this field has unsaved changes (yellow border)
+    const hasUnsavedChange = field.id in pendingChanges
 
     const handleChange = (value: any) => {
       if (onFieldChange) {
@@ -44,20 +52,20 @@ export function DynamicFormRenderer({
         {editMode ? (
           <FieldInput
             field={field}
-            value={currentValue}
+            value={displayValue}
             onChange={handleChange}
-            hasChanged={hasChanged}
+            hasChanged={hasUnsavedChange}
           />
         ) : (
           <div className="text-sm text-montron-text dark:text-white py-2">
-            {formatValue(currentValue, field.type)}
+            {formatValue(displayValue, field.type)}
           </div>
         )}
 
-        {/* Show old value if changed */}
-        {hasChanged && (
+        {/* Always show original value if there's a saved correction */}
+        {hasSavedCorrection && (
           <div className="text-xs text-montron-contrast dark:text-montron-extra line-through">
-            Alt: {formatValue(originalValue, field.type)}
+            Original: {formatValue(originalValue, field.type)}
           </div>
         )}
       </div>

@@ -23,10 +23,15 @@ public class TagesdetailService {
 
     private final FormBackendClient formBackendClient;
     private final EmployeeService employeeService;
+    private final dev.montron.pm.submissions.SubmissionService submissionService;
 
-    public TagesdetailService(FormBackendClient formBackendClient, EmployeeService employeeService) {
+    public TagesdetailService(
+            FormBackendClient formBackendClient, 
+            EmployeeService employeeService,
+            dev.montron.pm.submissions.SubmissionService submissionService) {
         this.formBackendClient = formBackendClient;
         this.employeeService = employeeService;
+        this.submissionService = submissionService;
     }
 
     public TagesdetailResponse getTagesdetail(UUID employeeId, LocalDate date) {
@@ -118,13 +123,21 @@ public class TagesdetailService {
                         .toList()
         );
 
-        // For now, originalData is the same as data (no changes yet)
+        // Get corrections from PM tool database
+        Map<String, Object> corrections = submissionService.getCorrections(submissionId);
+        
+        // Merge corrections into displayed data
+        Map<String, Object> displayedData = new HashMap<>(detail.data());
+        displayedData.putAll(corrections); // Overwrite with corrections
+        
+        boolean hasChanges = !corrections.isEmpty();
+        
         return new FormWithSubmissionDto(
                 formDefDto,
                 submissionId,
-                detail.data(),
-                detail.data(), // originalData
-                false, // hasChanges
+                displayedData, // Displayed data (original + corrections)
+                detail.data(), // Original data from mobile app (unchanged)
+                hasChanges,
                 formId,
                 String.valueOf(formDef.version()),
                 detail.submittedAt(),
