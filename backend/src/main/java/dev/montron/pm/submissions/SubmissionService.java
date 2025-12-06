@@ -11,6 +11,7 @@ import org.springframework.transaction.annotation.Transactional;
 import java.time.Instant;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.UUID;
 import org.springframework.stereotype.Service;
 
@@ -19,16 +20,19 @@ public class SubmissionService {
 
     private final FormBackendClient formBackendClient;
     private final SubmissionFieldCorrectionRepository correctionRepository;
+    private final SubmissionPdfVersionRepository pdfVersionRepository;
     private final ObjectMapper objectMapper;
     private final CurrentUserService currentUserService;
 
     public SubmissionService(
             FormBackendClient formBackendClient,
             SubmissionFieldCorrectionRepository correctionRepository,
+            SubmissionPdfVersionRepository pdfVersionRepository,
             ObjectMapper objectMapper,
             CurrentUserService currentUserService) {
         this.formBackendClient = formBackendClient;
         this.correctionRepository = correctionRepository;
+        this.pdfVersionRepository = pdfVersionRepository;
         this.objectMapper = objectMapper;
         this.currentUserService = currentUserService;
     }
@@ -119,6 +123,46 @@ public class SubmissionService {
 
             correctionRepository.save(correction);
         }
+
+        // Regenerate PDF with all corrections
+        regeneratePdfWithCorrections(submissionId, userId);
+    }
+
+    /**
+     * Regenerate PDF with all current corrections
+     */
+    private void regeneratePdfWithCorrections(UUID submissionId, UUID userId) {
+        // Get all corrections for this submission
+        Map<String, Object> allCorrections = getCorrections(submissionId);
+        
+        if (allCorrections.isEmpty()) {
+            // No corrections, no need to regenerate
+            return;
+        }
+
+        // Check if we already have a corrected version
+        Optional<SubmissionPdfVersion> existingVersion = pdfVersionRepository
+                .findLatestBySubmissionId(submissionId);
+
+        // Call mobile app to regenerate PDF with merged data
+        FormBackendClient.RegeneratePdfResponse pdfResponse = 
+                formBackendClient.regeneratePdf(submissionId, allCorrections);
+
+        if (existingVersion.isPresent()) {
+            // Update existing version (user is refining the corrections)
+            SubmissionPdfVersion pdfVersion = existingVersion.get();
+            pdfVersion.setPdfObjectKey(pdfResponse.pdfObjectKey());
+            pdfVersion.setCreatedBy(userId);
+            pdfVersionRepository.save(pdfVersion);
+        } else {
+            // Create first corrected version (v2)
+            SubmissionPdfVersion pdfVersion = new SubmissionPdfVersion();
+            pdfVersion.setSubmissionId(submissionId);
+            pdfVersion.setVersion(pdfResponse.version());
+            pdfVersion.setPdfObjectKey(pdfResponse.pdfObjectKey());
+            pdfVersion.setCreatedBy(userId);
+            pdfVersionRepository.save(pdfVersion);
+        }
     }
 
     /**
@@ -132,6 +176,26 @@ public class SubmissionService {
                         SubmissionFieldCorrection::getFieldId,
                         c -> parseValue(c.getCorrectedValue())
                 ));
+    }
+
+    /**
+     * Get the latest PDF URL for a submission.
+     * Returns corrected version (v2, v3, ...) if exists, otherwise original (v1).
+     */
+    public String getLatestPdfUrl(UUID submissionId, String originalPdfUrl) {
+        // Check if there's a corrected version
+        Optional<SubmissionPdfVersion> latestVersion = pdfVersionRepository.findLatestBySubmissionId(submissionId);
+        
+        if (latestVersion.isPresent()) {
+            // Return corrected PDF URL (need to get presigned URL from mobile app)
+            String pdfObjectKey = latestVersion.get().getPdfObjectKey();
+            // TODO: We need a method to get presigned URL for a specific object key
+            // For now, we'll need to add this to FormBackendClient
+            return formBackendClient.getPresignedUrl(pdfObjectKey);
+        }
+        
+        // No corrected version, return original
+        return originalPdfUrl;
     }
 
     private String convertToString(Object value) {

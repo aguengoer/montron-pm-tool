@@ -349,4 +349,42 @@ public class FormBackendClient {
                 .bodyToMono(SubmissionDetail.class)
                 .block();
     }
+
+    /**
+     * Regenerate PDF with corrected data
+     */
+    public record RegeneratePdfResponse(
+            String pdfUrl,
+            Integer version,
+            String pdfObjectKey
+    ) {}
+
+    public RegeneratePdfResponse regeneratePdf(UUID submissionId, java.util.Map<String, Object> correctedData) {
+        return webClient.post()
+                .uri("/submissions/{id}/regenerate-pdf", submissionId)
+                .header(HttpHeaders.AUTHORIZATION, resolveBearerToken())
+                .bodyValue(correctedData)
+                .retrieve()
+                .bodyToMono(RegeneratePdfResponse.class)
+                .block();
+    }
+
+    /**
+     * Get presigned URL for PDF object key
+     */
+    public String getPresignedUrl(String objectKey) {
+        record PresignedUrlResponse(String url) {}
+        
+        PresignedUrlResponse response = webClient.get()
+                .uri(uriBuilder -> uriBuilder
+                        .path("/submissions/pdf-url")
+                        .queryParam("objectKey", objectKey)
+                        .build())
+                .header(HttpHeaders.AUTHORIZATION, resolveBearerToken())
+                .retrieve()
+                .bodyToMono(PresignedUrlResponse.class)
+                .block();
+        
+        return response != null ? response.url() : null;
+    }
 }

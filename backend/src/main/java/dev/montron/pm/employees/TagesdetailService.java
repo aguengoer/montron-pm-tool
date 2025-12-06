@@ -132,6 +132,9 @@ public class TagesdetailService {
         
         boolean hasChanges = !corrections.isEmpty();
         
+        // Get latest PDF URL (corrected version if exists, otherwise original)
+        String latestPdfUrl = submissionService.getLatestPdfUrl(submissionId, detail.pdfUrl());
+        
         return new FormWithSubmissionDto(
                 formDefDto,
                 submissionId,
@@ -143,7 +146,7 @@ public class TagesdetailService {
                 detail.submittedAt(),
                 detail.employeeUsername(),
                 mapStatus(detail.status()),
-                detail.pdfUrl() // Presigned URL for PDF download
+                latestPdfUrl // Latest PDF URL (corrected version or original)
         );
     }
 
