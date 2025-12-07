@@ -317,37 +317,47 @@ export default function TagesdetailPage() {
               <CardContent>
                 {tagesdetail.regiescheine.length > 0 ? (
                   <div className="space-y-6">
-                    {tagesdetail.regiescheine.map((rs, idx) => (
-                      <div key={rs.submissionId}>
-                        {idx > 0 && (
-                          <div className="border-t border-montron-contrast/20 my-4" />
-                        )}
-                        <div className="flex items-center justify-between mb-3">
-                          <div className="text-sm font-medium text-montron-contrast dark:text-montron-extra">
-                            Regieschein #{idx + 1}
-                          </div>
-                          {rs.pdfUrl && (
-                            <Button
-                              variant="outline"
-                              size="sm"
-                              onClick={() => handleDownloadPdf(rs.pdfUrl, rs.formDefinition.name)}
-                              className="border-montron-contrast/30 text-montron-contrast dark:text-montron-extra hover:text-montron-primary hover:border-montron-primary"
-                            >
-                              <Download className="h-4 w-4 mr-2" />
-                              PDF
-                            </Button>
+                    {tagesdetail.regiescheine.map((rs, idx) => {
+                      // Capture variables explicitly to avoid closure issues
+                      const pdfUrl = rs.pdfUrl
+                      const formName = rs.formDefinition.name
+                      const submissionId = rs.submissionId
+                      
+                      return (
+                        <div key={submissionId}>
+                          {idx > 0 && (
+                            <div className="border-t border-montron-contrast/20 my-4" />
                           )}
+                          <div className="flex items-center justify-between mb-3">
+                            <div className="text-sm font-medium text-montron-contrast dark:text-montron-extra">
+                              Regieschein #{idx + 1}
+                            </div>
+                            {pdfUrl && (
+                              <Button
+                                variant="outline"
+                                size="sm"
+                                onClick={() => {
+                                  console.log(`Downloading PDF for Regieschein #${idx + 1}, submissionId: ${submissionId}, URL: ${pdfUrl}`)
+                                  handleDownloadPdf(pdfUrl, formName)
+                                }}
+                                className="border-montron-contrast/30 text-montron-contrast dark:text-montron-extra hover:text-montron-primary hover:border-montron-primary"
+                              >
+                                <Download className="h-4 w-4 mr-2" />
+                                PDF
+                              </Button>
+                            )}
+                          </div>
+                          <DynamicFormRenderer
+                            formWithSubmission={rs}
+                            editMode={isEditMode}
+                            pendingChanges={changes[submissionId] || {}}
+                            onFieldChange={(fieldId, value) => {
+                              handleFieldChange(submissionId, fieldId, value)
+                            }}
+                          />
                         </div>
-                        <DynamicFormRenderer
-                          formWithSubmission={rs}
-                          editMode={isEditMode}
-                          pendingChanges={changes[rs.submissionId] || {}}
-                          onFieldChange={(fieldId, value) => {
-                            handleFieldChange(rs.submissionId, fieldId, value)
-                          }}
-                        />
-                      </div>
-                    ))}
+                      )
+                    })}
                   </div>
                 ) : (
                   <p className="text-sm text-montron-contrast dark:text-montron-extra">

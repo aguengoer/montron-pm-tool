@@ -135,6 +135,8 @@ public class TagesdetailService {
         // Get latest PDF URL (corrected version if exists, otherwise original)
         String latestPdfUrl = submissionService.getLatestPdfUrl(submissionId, detail.pdfUrl());
         
+        log.debug("Submission {} - Form: {}, PDF URL: {}", submissionId, formDef.name(), latestPdfUrl);
+        
         return new FormWithSubmissionDto(
                 formDefDto,
                 submissionId,
