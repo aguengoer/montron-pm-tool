@@ -25,10 +25,22 @@ export function DynamicFormRenderer({
 }: DynamicFormRendererProps) {
   const { formDefinition, data, originalData } = formWithSubmission
 
+  // Debug: Log data structure
+  if (typeof window !== 'undefined' && process.env.NODE_ENV === 'development') {
+    console.log('DynamicFormRenderer - Form:', formDefinition.name)
+    console.log('DynamicFormRenderer - Data keys:', Object.keys(data))
+    console.log('DynamicFormRenderer - Fields:', formDefinition.fields.map(f => ({ id: f.id, label: f.label })))
+  }
+
   const renderField = (field: FormField) => {
     // Merge pending changes into current value for display
     const displayValue = field.id in pendingChanges ? pendingChanges[field.id] : data[field.id]
     const originalValue = originalData?.[field.id]
+    
+    // Debug: Log field value lookup
+    if (typeof window !== 'undefined' && process.env.NODE_ENV === 'development' && displayValue === undefined) {
+      console.log(`Field ${field.id} (${field.label}): value not found in data`)
+    }
     
     // Check if value differs from original (saved correction exists)
     const hasSavedCorrection = data[field.id] !== originalValue

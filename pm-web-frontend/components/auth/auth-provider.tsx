@@ -9,21 +9,22 @@ import {
   useState,
 } from "react";
 import { useRouter } from "next/navigation";
+import { signOut } from "firebase/auth";
+import { auth } from "@/lib/firebase";
 
 import { formApiFetch } from "@/lib/formApiClient";
-import { setAccessToken } from "@/lib/authToken";
+import { setAccessToken, getAccessToken } from "@/lib/authToken";
+import { beginSignIn, completeTotpSignIn, completeLoginFlow } from "@/services/auth";
 
 type AuthContextValue = {
   accessToken: string | null;
   isAuthenticated: boolean;
   loading: boolean;
-  login: (username: string, password: string) => Promise<void>;
+  login: (email: string, password: string, totpCode?: string) => Promise<void>;
   logout: () => void;
 };
 
 const AuthContext = createContext<AuthContextValue | undefined>(undefined);
-
-const ACCESS_TOKEN_STORAGE_KEY = "pm_access_token";
 
 type LoginResponse = {
   accessToken: string;
@@ -34,36 +35,80 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [accessTokenState, setAccessTokenState] = useState<string | null>(null);
   const [initialised, setInitialised] = useState(false);
 
+  // Bootstrap session on mount (check refresh cookie)
   useEffect(() => {
-    if (typeof window === "undefined") return;
-    const storedToken = window.localStorage.getItem(ACCESS_TOKEN_STORAGE_KEY);
-    if (storedToken) {
-      setAccessToken(storedToken);
-      setAccessTokenState(storedToken);
-    }
-    setInitialised(true);
+    const bootstrapSession = async () => {
+      try {
+        const result = await formApiFetch<LoginResponse>("/auth/refresh", {
+          method: "POST",
+          credentials: "include", // Important: send cookies
+        });
+        
+        setAccessToken(result.accessToken);
+        setAccessTokenState(result.accessToken);
+      } catch (error) {
+        // No valid refresh token, user needs to login
+        setAccessToken(null);
+        setAccessTokenState(null);
+      } finally {
+        setInitialised(true);
+      }
+    };
+
+    bootstrapSession();
   }, []);
 
-  const login = useCallback(async (username: string, password: string) => {
-    const result = await formApiFetch<LoginResponse>("/auth/login", {
-      method: "POST",
-      body: JSON.stringify({ username, password }),
-    });
+  const login = useCallback(async (email: string, password: string, totpCode?: string) => {
+    try {
+      // Step 1: Begin sign-in (email/password)
+      const result = await beginSignIn(email, password);
 
-    setAccessToken(result.accessToken);
-    setAccessTokenState(result.accessToken);
-    if (typeof window !== "undefined") {
-      window.localStorage.setItem(ACCESS_TOKEN_STORAGE_KEY, result.accessToken);
+      if (result.type === "MFA_REQUIRED") {
+        if (!totpCode) {
+          // MFA required but no code provided - throw special error
+          throw new Error("MFA_REQUIRED");
+        }
+        
+        // Complete TOTP sign-in
+        const user = await completeTotpSignIn(result.resolver, totpCode);
+        
+        // Complete login flow (email verification check + backend token exchange)
+        await completeLoginFlow(user);
+      } else {
+        // Sign-in successful without MFA
+        await completeLoginFlow(result.userCredential.user);
+      }
+
+      // Update access token state
+      const token = getAccessToken();
+      setAccessTokenState(token);
+      router.replace("/mitarbeiter");
+    } catch (error: any) {
+      // Re-throw error so login page can handle it
+      throw error;
     }
-    router.replace("/mitarbeiter");
   }, [router]);
 
-  const logout = useCallback(() => {
+  const logout = useCallback(async () => {
+    // Call backend logout to revoke refresh token
+    try {
+      await formApiFetch("/auth/logout", {
+        method: "POST",
+        credentials: "include",
+      });
+    } catch (error) {
+      // Ignore errors during logout
+    }
+
+    // Sign out from Firebase
+    try {
+      await signOut(auth);
+    } catch (error) {
+      // Ignore errors
+    }
+
     setAccessToken(null);
     setAccessTokenState(null);
-    if (typeof window !== "undefined") {
-      window.localStorage.removeItem(ACCESS_TOKEN_STORAGE_KEY);
-    }
     router.replace("/login");
   }, [router]);
 

@@ -16,13 +16,19 @@ import { PinSetupDialog } from "@/components/pin/PinSetupDialog"
 import { usePinStatus } from "@/hooks/usePin"
 import { formatDistanceToNow } from "date-fns"
 import { de } from "date-fns/locale"
+import { MfaSetupDialog } from "@/components/mfa/MfaSetupDialog"
+import { useMfaStatus, useUnenrollMfa } from "@/hooks/useMfa"
 
 export default function EinstellungenPage() {
   const { logout } = useAuth()
   const { data: config, isLoading: configLoading } = useFormApiConfig()
   const updateConfigMutation = useUpdateFormApiConfig()
   const { data: pinStatus, isLoading: pinLoading, refetch: refetchPin } = usePinStatus()
+  const { data: mfaStatus, isLoading: mfaLoading, refetch: refetchMfa } = useMfaStatus()
+  const unenrollMfa = useUnenrollMfa()
   const [showPinDialog, setShowPinDialog] = useState(false)
+  const [showMfaDialog, setShowMfaDialog] = useState(false)
+  const [unenrollingMfa, setUnenrollingMfa] = useState(false)
 
   const [baseUrl, setBaseUrl] = useState("")
   const [serviceToken, setServiceToken] = useState("")
@@ -51,6 +57,24 @@ export default function EinstellungenPage() {
     })
   }, [baseUrl, serviceToken, updateConfigMutation])
 
+  const handleUnenrollMfa = useCallback(async () => {
+    if (!mfaStatus?.enrolledFactors.length) return;
+
+    if (!confirm("Möchten Sie die 2-Faktor-Authentifizierung wirklich deaktivieren?")) {
+      return;
+    }
+
+    setUnenrollingMfa(true);
+    try {
+      await unenrollMfa(mfaStatus.enrolledFactors[0].uid);
+      await refetchMfa();
+    } catch (error: any) {
+      alert("Fehler beim Deaktivieren der 2FA: " + (error.message || "Unbekannter Fehler"));
+    } finally {
+      setUnenrollingMfa(false);
+    }
+  }, [mfaStatus, unenrollMfa, refetchMfa])
+
   return (
     <div className="container mx-auto py-8 px-4 max-w-4xl">
       {/* Session Settings */}
@@ -71,6 +95,81 @@ export default function EinstellungenPage() {
               </Button>
             </div>
           </div>
+        </CardContent>
+      </Card>
+
+      {/* 2FA Security Section */}
+      <Card className="mb-6 border-montron-contrast/20 dark:border-montron-contrast/50 dark:bg-montron-text">
+        <CardHeader>
+          <div className="flex items-center gap-2">
+            <Shield className="h-5 w-5 text-montron-primary" />
+            <CardTitle className="text-montron-text dark:text-white">2-Faktor-Authentifizierung</CardTitle>
+          </div>
+          <CardDescription>
+            Schützen Sie Ihr Admin-Konto mit einer zusätzlichen Sicherheitsebene (TOTP).
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          {mfaLoading ? (
+            <div className="flex items-center gap-2 text-montron-contrast dark:text-montron-extra">
+              <Spinner className="h-4 w-4" />
+              <span>Lade 2FA-Status…</span>
+            </div>
+          ) : mfaStatus?.isEnabled ? (
+            <>
+              {/* 2FA is enabled */}
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-3">
+                  <CheckCircle2 className="h-5 w-5 text-green-600 dark:text-green-400" />
+                  <div>
+                    <div className="font-medium text-montron-text dark:text-white">2FA aktiviert</div>
+                    <div className="text-sm text-montron-contrast dark:text-montron-extra">
+                      {mfaStatus.enrolledFactors.length} Faktor(en) aktiv
+                    </div>
+                  </div>
+                </div>
+                <div className="flex gap-2">
+                  <Button
+                    onClick={handleUnenrollMfa}
+                    variant="outline"
+                    disabled={unenrollingMfa}
+                    className="border-red-300 text-red-600 hover:bg-red-50 dark:border-red-800 dark:text-red-400 dark:hover:bg-red-950"
+                  >
+                    {unenrollingMfa ? (
+                      <>
+                        <Spinner className="mr-2 h-4 w-4" />
+                        Deaktiviere...
+                      </>
+                    ) : (
+                      "2FA deaktivieren"
+                    )}
+                  </Button>
+                </div>
+              </div>
+            </>
+          ) : (
+            <>
+              {/* 2FA is not set */}
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-3">
+                  <AlertCircle className="h-5 w-5 text-montron-contrast dark:text-montron-extra" />
+                  <div>
+                    <div className="font-medium text-montron-text dark:text-white">2FA nicht aktiviert</div>
+                    <div className="text-sm text-montron-contrast dark:text-montron-extra">
+                      Aktivieren Sie 2FA für zusätzlichen Schutz
+                    </div>
+                  </div>
+                </div>
+                <Button
+                  onClick={() => setShowMfaDialog(true)}
+                  className="bg-montron-primary text-white hover:bg-montron-primary/90"
+                >
+                  <Shield className="mr-2 h-4 w-4" />
+                  2FA aktivieren
+                </Button>
+              </div>
+            </>
+          )}
         </CardContent>
       </Card>
 
@@ -283,6 +382,14 @@ export default function EinstellungenPage() {
         open={showPinDialog}
         onOpenChange={setShowPinDialog}
         onSuccess={() => refetchPin()}
+      />
+      <MfaSetupDialog
+        open={showMfaDialog}
+        onOpenChange={setShowMfaDialog}
+        onSuccess={() => {
+          refetchMfa();
+          setShowMfaDialog(false);
+        }}
       />
     </div>
   )

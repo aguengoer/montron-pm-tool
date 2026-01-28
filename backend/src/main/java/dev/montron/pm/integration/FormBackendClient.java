@@ -1,6 +1,7 @@
 package dev.montron.pm.integration;
 
 import com.fasterxml.jackson.annotation.JsonProperty;
+import com.fasterxml.jackson.databind.JsonNode;
 import dev.montron.pm.integration.config.FormApiConfigService;
 import java.time.Instant;
 import java.time.LocalDate;
@@ -315,7 +316,7 @@ public class FormBackendClient {
             String type,
             Boolean required,
             String placeholder,
-            java.util.List<String> options,
+            JsonNode options,  // Can be array of strings or objects like [{"value":"...","label":"..."}]
             ValidationRules validation
     ) {}
 

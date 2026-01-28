@@ -1,24 +1,43 @@
 "use client"
 
 import type React from "react"
-import { useEffect } from "react"
+import { useEffect, useState } from "react"
 import Link from "next/link"
 import { usePathname, useRouter } from "next/navigation"
-import { Users, FileOutput, Building, Settings } from "lucide-react"
+import { Users, FileOutput, Building, Settings, LogOut, User } from "lucide-react"
+import { auth } from "@/lib/firebase"
+import { onAuthStateChanged, User as FirebaseUser } from "firebase/auth"
 
 import { useAuth } from "@/components/auth/auth-provider"
 import { Button } from "@/components/ui/button"
 import { Spinner } from "@/components/ui/spinner"
 import { ThemeToggle } from "@/components/ui/theme-toggle"
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip"
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu"
 
 export function Layout({ children }: { children: React.ReactNode }) {
   const router = useRouter()
   const pathname = usePathname()
-  const { isAuthenticated, loading } = useAuth()
+  const { isAuthenticated, loading, logout } = useAuth()
+  const [currentUser, setCurrentUser] = useState<FirebaseUser | null>(null)
 
   const isLoginRoute = pathname === "/login"
   const isSetupRoute = pathname?.startsWith("/setup")
+
+  // Listen to Firebase auth state changes
+  useEffect(() => {
+    const unsubscribe = onAuthStateChanged(auth, (user) => {
+      setCurrentUser(user)
+    })
+    return unsubscribe
+  }, [])
 
   useEffect(() => {
     if (loading) return
@@ -63,7 +82,34 @@ export function Layout({ children }: { children: React.ReactNode }) {
   return (
     <div className="min-h-screen flex flex-col bg-white dark:bg-montron-text">
       <header className="border-b border-montron-contrast/20 dark:border-montron-contrast/40 py-2 px-4">
-        <div className="container mx-auto flex justify-end">
+        <div className="container mx-auto flex items-center justify-end gap-2">
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button
+                variant="ghost"
+                size="sm"
+                className="text-montron-contrast dark:text-montron-extra hover:text-montron-primary hover:bg-montron-extra dark:hover:bg-montron-contrast/20"
+              >
+                <User className="h-4 w-4 mr-2" />
+                {currentUser?.email || "Benutzer"}
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end" className="w-56">
+              <DropdownMenuLabel>
+                <div className="flex flex-col space-y-1">
+                  <p className="text-sm font-medium">{currentUser?.email || "Nicht angemeldet"}</p>
+                  {currentUser?.emailVerified && (
+                    <p className="text-xs text-muted-foreground">E-Mail verifiziert</p>
+                  )}
+                </div>
+              </DropdownMenuLabel>
+              <DropdownMenuSeparator />
+              <DropdownMenuItem onClick={logout} variant="destructive">
+                <LogOut className="mr-2 h-4 w-4" />
+                Abmelden
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
           <ThemeToggle />
         </div>
       </header>

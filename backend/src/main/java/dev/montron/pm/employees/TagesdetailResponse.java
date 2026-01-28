@@ -16,8 +16,8 @@ public record TagesdetailResponse(
         String employeeName,
         LocalDate date,
         
-        // Column 1: Tagesbericht (dynamic form)
-        FormWithSubmissionDto tagesbericht,
+        // Column 1: Tagesberichte (list of dynamic forms)
+        List<FormWithSubmissionDto> tagesberichte,
         
         // Column 2: Regiescheine (list of dynamic forms)
         List<FormWithSubmissionDto> regiescheine,

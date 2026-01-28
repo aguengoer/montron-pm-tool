@@ -76,7 +76,7 @@ export interface TagesdetailData {
   employeeId: string
   employeeName: string
   date: string
-  tagesbericht: FormWithSubmission | null
+  tagesberichte: FormWithSubmission[]  // Changed from single to list
   regiescheine: FormWithSubmission[]
   streetwatch: StreetwatchData
   validationIssues: ValidationIssue[]

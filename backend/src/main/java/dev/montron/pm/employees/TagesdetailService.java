@@ -1,5 +1,6 @@
 package dev.montron.pm.employees;
 
+import com.fasterxml.jackson.databind.JsonNode;
 import dev.montron.pm.integration.FormBackendClient;
 import dev.montron.pm.integration.FormBackendClient.FormSubmissionListItem;
 import dev.montron.pm.integration.FormBackendClient.SubmissionDetail;
@@ -14,7 +15,6 @@ import java.time.Instant;
 import java.time.LocalDate;
 import java.time.ZoneOffset;
 import java.util.*;
-import java.util.stream.Collectors;
 
 @Service
 public class TagesdetailService {
@@ -51,7 +51,7 @@ public class TagesdetailService {
         log.debug("Found {} submissions for date {}", submissionsPage.content().size(), date);
 
         // Separate by form type
-        FormWithSubmissionDto tagesbericht = null;
+        List<FormWithSubmissionDto> tagesberichte = new ArrayList<>();
         List<FormWithSubmissionDto> regiescheine = new ArrayList<>();
 
         for (FormSubmissionListItem item : submissionsPage.content()) {
@@ -62,7 +62,7 @@ public class TagesdetailService {
             // Matches: BAUTAGESBERICHT, Tagesbericht, tagesbericht, etc.
             if (formNameLower.contains("tagesbericht") || formNameLower.contains("tb")) {
                 log.info("Found Tagesbericht: {}", item.formName());
-                tagesbericht = buildFormWithSubmission(item);
+                tagesberichte.add(buildFormWithSubmission(item));
             }
             // Check if it's a Regieschein (case-insensitive, contains check)
             // Matches: REGIESCHEIN, Regieschein, regieschein, etc.
@@ -76,13 +76,13 @@ public class TagesdetailService {
         var streetwatch = buildStreetwatchData(employeeId, date);
 
         // Calculate validation issues
-        var validationIssues = calculateValidationIssues(tagesbericht, regiescheine, streetwatch);
+        var validationIssues = calculateValidationIssues(tagesberichte, regiescheine, streetwatch);
 
         return new TagesdetailResponse(
                 employeeId,
                 employee.firstName() + " " + employee.lastName(),
                 date,
-                tagesbericht,
+                tagesberichte,
                 regiescheine,
                 streetwatch,
                 validationIssues
@@ -110,7 +110,7 @@ public class TagesdetailService {
                                 f.type(),
                                 f.required() != null && f.required(),
                                 f.placeholder(),
-                                f.options(),
+                                convertOptionsToStringList(f.options()),
                                 f.validation() != null ? new FormDefinitionDto.ValidationRules(
                                         f.validation().minLength(),
                                         f.validation().maxLength(),
@@ -178,19 +178,20 @@ public class TagesdetailService {
     }
 
     private List<TagesdetailResponse.ValidationIssue> calculateValidationIssues(
-            FormWithSubmissionDto tagesbericht,
+            List<FormWithSubmissionDto> tagesberichte,
             List<FormWithSubmissionDto> regiescheine,
             TagesdetailResponse.StreetwatchData streetwatch) {
 
         List<TagesdetailResponse.ValidationIssue> issues = new ArrayList<>();
 
-        if (tagesbericht == null || streetwatch == null) {
+        if (tagesberichte.isEmpty() || streetwatch == null) {
             return issues;
         }
 
-        // Example validation: Zeit-Diff TB ↔ SW
+        // Example validation: Zeit-Diff TB ↔ SW (check first Tagesbericht)
         try {
-            Object arbeitszeitVon = tagesbericht.data().get("arbeitszeit_von");
+            FormWithSubmissionDto firstTb = tagesberichte.get(0);
+            Object arbeitszeitVon = firstTb.data().get("arbeitszeit_von");
             if (arbeitszeitVon != null && !streetwatch.entries().isEmpty()) {
                 // Parse times and calculate difference
                 // For now, add a placeholder validation
@@ -206,19 +207,21 @@ public class TagesdetailService {
             log.warn("Error calculating time diff validation", e);
         }
 
-        // Example validation: TB ↔ RS Pause matching
+        // Example validation: TB ↔ RS Pause matching (check all Tagesberichte)
         try {
-            Object tbPause = tagesbericht.data().get("pause");
-            for (int i = 0; i < regiescheine.size(); i++) {
-                Object rsPause = regiescheine.get(i).data().get("pause");
-                if (tbPause != null && rsPause != null && !tbPause.equals(rsPause)) {
-                    issues.add(new TagesdetailResponse.ValidationIssue(
-                            "error",
-                            "✕",
-                            "Pause TB ≠ RS",
-                            "pause",
-                            "regieschein"
-                    ));
+            for (FormWithSubmissionDto tagesbericht : tagesberichte) {
+                Object tbPause = tagesbericht.data().get("pause");
+                for (int i = 0; i < regiescheine.size(); i++) {
+                    Object rsPause = regiescheine.get(i).data().get("pause");
+                    if (tbPause != null && rsPause != null && !tbPause.equals(rsPause)) {
+                        issues.add(new TagesdetailResponse.ValidationIssue(
+                                "error",
+                                "✕",
+                                "Pause TB ≠ RS",
+                                "pause",
+                                "regieschein"
+                        ));
+                    }
                 }
             }
         } catch (Exception e) {
@@ -226,6 +229,35 @@ public class TagesdetailService {
         }
 
         return issues;
+    }
+
+    /**
+     * Convert JsonNode options to List<String>
+     * Supports both formats:
+     * - Array of strings: ["option1", "option2"]
+     * - Array of objects: [{"value":"option1","label":"Option 1"}, {"value":"option2","label":"Option 2"}]
+     */
+    private List<String> convertOptionsToStringList(JsonNode options) {
+        if (options == null || options.isNull() || !options.isArray()) {
+            return null;
+        }
+
+        List<String> result = new ArrayList<>();
+        for (JsonNode option : options) {
+            if (option.isTextual()) {
+                // Simple string value
+                result.add(option.asText());
+            } else if (option.isObject()) {
+                // Object with value/label - extract value
+                if (option.has("value")) {
+                    result.add(option.get("value").asText());
+                } else if (option.has("label")) {
+                    // Fallback: use label if value not present
+                    result.add(option.get("label").asText());
+                }
+            }
+        }
+        return result.isEmpty() ? null : result;
     }
 }
 

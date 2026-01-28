@@ -16,6 +16,7 @@ import { StreetwatchTable } from "@/components/tagesdetail/StreetwatchTable"
 import { ValidationPanel } from "@/components/tagesdetail/ValidationPanel"
 import { ValidationIssue } from "@/types/tagesdetail"
 import { useToast } from "@/hooks/use-toast"
+import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/components/ui/accordion"
 
 export default function TagesdetailPage() {
   const router = useRouter()
@@ -224,7 +225,7 @@ export default function TagesdetailPage() {
           )}
 
           {/* Old values note - show when there are corrections */}
-          {tagesdetail && (tagesdetail.tagesbericht?.hasChanges || tagesdetail.regiescheine.some(rs => rs.hasChanges)) && (
+          {tagesdetail && (tagesdetail.tagesberichte.some(tb => tb.hasChanges) || tagesdetail.regiescheine.some(rs => rs.hasChanges)) && (
             <div className="mt-4 text-xs text-montron-contrast dark:text-montron-extra italic">
               Korrigierte Felder zeigen den Originalwert durchgestrichen darunter.
             </div>
@@ -263,43 +264,77 @@ export default function TagesdetailPage() {
         </Card>
       ) : (
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-          {/* Column 1: Tagesbericht */}
+          {/* Column 1: Tagesberichte */}
           <div className="col-span-1">
             <Card className="border-montron-contrast/20 dark:border-montron-contrast/50 dark:bg-montron-text h-full">
               <CardHeader>
-                <div className="flex items-center justify-between">
-                  <CardTitle className="text-lg flex items-center gap-2 text-montron-text dark:text-white">
-                    📋 Tagesbericht
-                  </CardTitle>
-                  {tagesdetail.tagesbericht?.pdfUrl && (
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      onClick={() => handleDownloadPdf(
-                        tagesdetail.tagesbericht!.pdfUrl,
-                        tagesdetail.tagesbericht!.formDefinition.name
-                      )}
-                      className="border-montron-contrast/30 text-montron-contrast dark:text-montron-extra hover:text-montron-primary hover:border-montron-primary"
-                    >
-                      <Download className="h-4 w-4 mr-2" />
-                      PDF
-                    </Button>
+                <CardTitle className="text-lg flex items-center gap-2 text-montron-text dark:text-white">
+                  📋 Tagesberichte
+                  {tagesdetail.tagesberichte.length > 0 && (
+                    <span className="text-sm font-normal text-montron-contrast dark:text-montron-extra">
+                      ({tagesdetail.tagesberichte.length})
+                    </span>
                   )}
-                </div>
+                </CardTitle>
               </CardHeader>
               <CardContent>
-                {tagesdetail.tagesbericht ? (
-                  <DynamicFormRenderer
-                    formWithSubmission={tagesdetail.tagesbericht}
-                    editMode={isEditMode}
-                    pendingChanges={changes[tagesdetail.tagesbericht.submissionId] || {}}
-                    onFieldChange={(fieldId, value) => {
-                      handleFieldChange(tagesdetail.tagesbericht!.submissionId, fieldId, value)
-                    }}
-                  />
+                {tagesdetail.tagesberichte.length > 0 ? (
+                  <Accordion type="single" collapsible className="w-full" defaultValue={tagesdetail.tagesberichte.length === 1 ? "tb-0" : undefined}>
+                    {tagesdetail.tagesberichte.map((tb, idx) => {
+                      const submissionId = tb.submissionId
+                      const pdfUrl = tb.pdfUrl
+                      const formName = tb.formDefinition.name
+                      const hasChanges = tb.hasChanges
+                      
+                      return (
+                        <AccordionItem key={submissionId} value={`tb-${idx}`} className="border-montron-contrast/20">
+                          <div className="flex items-center gap-2 pr-4">
+                            <AccordionTrigger className="flex-1 text-montron-text dark:text-white hover:no-underline">
+                              <div className="flex items-center gap-2">
+                                <span className="font-medium">
+                                  Tagesbericht #{idx + 1}
+                                </span>
+                                {formName && (
+                                  <span className="text-xs text-montron-contrast dark:text-montron-extra">
+                                    ({formName})
+                                  </span>
+                                )}
+                                {hasChanges && (
+                                  <span className="text-xs px-2 py-0.5 bg-yellow-500/20 text-yellow-600 dark:text-yellow-400 rounded">
+                                    Korrigiert
+                                  </span>
+                                )}
+                              </div>
+                            </AccordionTrigger>
+                            {pdfUrl && (
+                              <Button
+                                variant="ghost"
+                                size="sm"
+                                onClick={() => handleDownloadPdf(pdfUrl, formName)}
+                                className="h-8 w-8 p-0 text-montron-contrast dark:text-montron-extra hover:text-montron-primary flex-shrink-0"
+                                title="PDF herunterladen"
+                              >
+                                <Download className="h-4 w-4" />
+                              </Button>
+                            )}
+                          </div>
+                          <AccordionContent className="pt-4">
+                            <DynamicFormRenderer
+                              formWithSubmission={tb}
+                              editMode={isEditMode}
+                              pendingChanges={changes[submissionId] || {}}
+                              onFieldChange={(fieldId, value) => {
+                                handleFieldChange(submissionId, fieldId, value)
+                              }}
+                            />
+                          </AccordionContent>
+                        </AccordionItem>
+                      )
+                    })}
+                  </Accordion>
                 ) : (
                   <p className="text-sm text-montron-contrast dark:text-montron-extra">
-                    Kein Tagesbericht vorhanden
+                    Keine Tagesberichte vorhanden
                   </p>
                 )}
               </CardContent>
