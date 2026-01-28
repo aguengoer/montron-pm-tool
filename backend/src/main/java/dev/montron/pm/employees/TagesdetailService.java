@@ -1,6 +1,7 @@
 package dev.montron.pm.employees;
 
 import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import dev.montron.pm.integration.FormBackendClient;
 import dev.montron.pm.integration.FormBackendClient.FormSubmissionListItem;
 import dev.montron.pm.integration.FormBackendClient.SubmissionDetail;
@@ -15,11 +16,13 @@ import java.time.Instant;
 import java.time.LocalDate;
 import java.time.ZoneOffset;
 import java.util.*;
+import java.util.stream.Collectors;
 
 @Service
 public class TagesdetailService {
 
     private static final Logger log = LoggerFactory.getLogger(TagesdetailService.class);
+    private final ObjectMapper objectMapper = new ObjectMapper();
 
     private final FormBackendClient formBackendClient;
     private final EmployeeService employeeService;
@@ -98,12 +101,21 @@ public class TagesdetailService {
         UUID formId = UUID.fromString(item.formId());
         FormDefinition formDef = formBackendClient.getFormDefinition(formId);
 
+        // Extract fields from UI_FORM_JSON_START if present, otherwise use outer fields
+        List<FormBackendClient.FormField> fieldsToUse = extractFieldsFromDescription(formDef);
+        if (fieldsToUse.isEmpty()) {
+            log.warn("No fields found in UI_FORM_JSON_START for form {}, using outer fields", formDef.id());
+            fieldsToUse = formDef.fields();
+        } else {
+            log.debug("Using {} fields from UI_FORM_JSON_START for form {}", fieldsToUse.size(), formDef.id());
+        }
+
         // Convert to DTOs
         FormDefinitionDto formDefDto = new FormDefinitionDto(
                 formDef.id(),
                 formDef.name(),
                 formDef.description(),
-                formDef.fields().stream()
+                fieldsToUse.stream()
                         .map(f -> new FormDefinitionDto.FormFieldDto(
                                 f.id(),
                                 f.label(),
@@ -126,8 +138,64 @@ public class TagesdetailService {
         // Get corrections from PM tool database
         Map<String, Object> corrections = submissionService.getCorrections(submissionId);
         
+        // Convert JsonNode data to Map<String, Object>
+        Map<String, Object> dataMap = new HashMap<>();
+        if (detail.data() != null && detail.data().isObject()) {
+            detail.data().fieldNames().forEachRemaining(key -> {
+                JsonNode valueNode = detail.data().get(key);
+                // Convert JsonNode to appropriate Java type
+                Object value;
+                if (valueNode.isTextual()) {
+                    value = valueNode.asText();
+                } else if (valueNode.isNumber()) {
+                    if (valueNode.isInt()) {
+                        value = valueNode.asInt();
+                    } else if (valueNode.isLong()) {
+                        value = valueNode.asLong();
+                    } else {
+                        value = valueNode.asDouble();
+                    }
+                } else if (valueNode.isBoolean()) {
+                    value = valueNode.asBoolean();
+                } else if (valueNode.isNull()) {
+                    value = null;
+                } else if (valueNode.isArray()) {
+                    // Convert array to List<Object>
+                    List<Object> list = new ArrayList<>();
+                    for (JsonNode arrayItem : valueNode) {
+                        if (arrayItem.isTextual()) {
+                            list.add(arrayItem.asText());
+                        } else if (arrayItem.isNumber()) {
+                            list.add(arrayItem.asDouble());
+                        } else if (arrayItem.isBoolean()) {
+                            list.add(arrayItem.asBoolean());
+                        } else if (arrayItem.isObject()) {
+                            // For complex objects in array, convert to Map
+                            Map<String, Object> objectMap = new HashMap<>();
+                            arrayItem.fieldNames().forEachRemaining(objKey -> {
+                                JsonNode objValue = arrayItem.get(objKey);
+                                if (objValue.isTextual()) {
+                                    objectMap.put(objKey, objValue.asText());
+                                } else if (objValue.isNumber()) {
+                                    objectMap.put(objKey, objValue.asDouble());
+                                } else {
+                                    objectMap.put(objKey, objValue.toString());
+                                }
+                            });
+                            list.add(objectMap);
+                        }
+                    }
+                    value = list;
+                } else {
+                    // For complex types, keep as JsonNode or convert to String
+                    value = valueNode.toString();
+                }
+                dataMap.put(key, value);
+            });
+        }
+        
         // Merge corrections into displayed data
-        Map<String, Object> displayedData = new HashMap<>(detail.data());
+        Map<String, Object> displayedData = new HashMap<>(dataMap);
         displayedData.putAll(corrections); // Overwrite with corrections
         
         boolean hasChanges = !corrections.isEmpty();
@@ -136,12 +204,35 @@ public class TagesdetailService {
         String latestPdfUrl = submissionService.getLatestPdfUrl(submissionId, detail.pdfUrl());
         
         log.debug("Submission {} - Form: {}, PDF URL: {}", submissionId, formDef.name(), latestPdfUrl);
+        log.debug("Submission {} - Data keys: {}", submissionId, dataMap.keySet());
+        log.debug("Submission {} - Field IDs: {}", submissionId, formDef.fields().stream().map(f -> f.id()).toList());
+        
+        // Check for field ID mismatches
+        Set<String> fieldIds = formDef.fields().stream().map(f -> f.id()).collect(java.util.stream.Collectors.toSet());
+        Set<String> dataKeys = new HashSet<>(dataMap.keySet());
+        
+        // Find fields without data
+        List<String> missingInData = formDef.fields().stream()
+                .filter(f -> !dataKeys.contains(f.id()))
+                .map(f -> f.id() + " (" + f.label() + ")")
+                .toList();
+        if (!missingInData.isEmpty()) {
+            log.warn("Submission {} - Fields without data: {}", submissionId, missingInData);
+        }
+        
+        // Find data keys without fields
+        List<String> extraInData = dataKeys.stream()
+                .filter(k -> !fieldIds.contains(k))
+                .toList();
+        if (!extraInData.isEmpty()) {
+            log.warn("Submission {} - Data keys without fields: {}", submissionId, extraInData);
+        }
         
         return new FormWithSubmissionDto(
                 formDefDto,
                 submissionId,
                 displayedData, // Displayed data (original + corrections)
-                detail.data(), // Original data from mobile app (unchanged)
+                dataMap, // Original data from mobile app (unchanged, converted from JsonNode)
                 hasChanges,
                 formId,
                 String.valueOf(formDef.version()),
@@ -229,6 +320,64 @@ public class TagesdetailService {
         }
 
         return issues;
+    }
+
+    /**
+     * Extract field definitions from UI_FORM_JSON_START in the description.
+     * The mobile backend embeds the actual form structure in the description between 
+     * UI_FORM_JSON_START and UI_FORM_JSON_END markers.
+     */
+    private List<FormBackendClient.FormField> extractFieldsFromDescription(FormDefinition formDef) {
+        String description = formDef.description();
+        if (description == null || description.isBlank()) {
+            return List.of();
+        }
+
+        try {
+            // Find the JSON between <!--UI_FORM_JSON_START--> and <!--UI_FORM_JSON_END-->
+            String startMarker = "<!--UI_FORM_JSON_START-->";
+            String endMarker = "<!--UI_FORM_JSON_END-->";
+            int startIdx = description.indexOf(startMarker);
+            int endIdx = description.indexOf(endMarker);
+            
+            if (startIdx == -1 || endIdx == -1 || startIdx >= endIdx) {
+                log.debug("No UI_FORM_JSON_START/END markers found in description for form {}", formDef.id());
+                return List.of();
+            }
+
+            // Extract the JSON string
+            String jsonStr = description.substring(startIdx + startMarker.length(), endIdx).trim();
+            
+            log.debug("Extracted UI_FORM_JSON string (first 200 chars): {}", 
+                    jsonStr.length() > 200 ? jsonStr.substring(0, 200) + "..." : jsonStr);
+            
+            // Parse the JSON
+            JsonNode uiFormJson = objectMapper.readTree(jsonStr);
+            JsonNode fieldsNode = uiFormJson.get("fields");
+            
+            if (fieldsNode == null || !fieldsNode.isArray()) {
+                log.warn("No fields array found in UI_FORM_JSON for form {}", formDef.id());
+                return List.of();
+            }
+
+            // Convert JSON fields to FormField objects
+            List<FormBackendClient.FormField> fields = new ArrayList<>();
+            for (JsonNode fieldNode : fieldsNode) {
+                try {
+                    FormBackendClient.FormField field = objectMapper.treeToValue(fieldNode, FormBackendClient.FormField.class);
+                    fields.add(field);
+                } catch (Exception e) {
+                    log.warn("Failed to parse field from UI_FORM_JSON: {}", fieldNode, e);
+                }
+            }
+
+            log.info("Extracted {} fields from UI_FORM_JSON for form {}", fields.size(), formDef.id());
+            return fields;
+            
+        } catch (Exception e) {
+            log.error("Error extracting fields from UI_FORM_JSON for form {}", formDef.id(), e);
+            return List.of();
+        }
     }
 
     /**

@@ -29,7 +29,24 @@ export function DynamicFormRenderer({
   if (typeof window !== 'undefined' && process.env.NODE_ENV === 'development') {
     console.log('DynamicFormRenderer - Form:', formDefinition.name)
     console.log('DynamicFormRenderer - Data keys:', Object.keys(data))
+    console.log('DynamicFormRenderer - Data sample:', Object.keys(data).slice(0, 3).reduce((acc, key) => {
+      acc[key] = data[key]
+      return acc
+    }, {} as Record<string, any>))
     console.log('DynamicFormRenderer - Fields:', formDefinition.fields.map(f => ({ id: f.id, label: f.label })))
+    
+    // Check for mismatched keys
+    const fieldIds = new Set(formDefinition.fields.map(f => f.id))
+    const dataKeys = new Set(Object.keys(data))
+    const missingInData = formDefinition.fields.filter(f => !dataKeys.has(f.id))
+    const extraInData = Object.keys(data).filter(key => !fieldIds.has(key))
+    
+    if (missingInData.length > 0) {
+      console.warn('Fields without data:', missingInData.map(f => ({ id: f.id, label: f.label })))
+    }
+    if (extraInData.length > 0) {
+      console.log('Data keys without fields:', extraInData)
+    }
   }
 
   const renderField = (field: FormField) => {
@@ -37,9 +54,12 @@ export function DynamicFormRenderer({
     const displayValue = field.id in pendingChanges ? pendingChanges[field.id] : data[field.id]
     const originalValue = originalData?.[field.id]
     
-    // Debug: Log field value lookup
-    if (typeof window !== 'undefined' && process.env.NODE_ENV === 'development' && displayValue === undefined) {
-      console.log(`Field ${field.id} (${field.label}): value not found in data`)
+    // Debug: Log field value lookup for missing values
+    if (typeof window !== 'undefined' && process.env.NODE_ENV === 'development') {
+      if (displayValue === undefined && !(field.id in pendingChanges)) {
+        console.log(`Field ${field.id} (${field.label}): value not found in data`)
+        console.log(`  Available keys:`, Object.keys(data).filter(k => k.toLowerCase().includes(field.id.toLowerCase().substring(0, 8))))
+      }
     }
     
     // Check if value differs from original (saved correction exists)
@@ -249,6 +269,22 @@ function formatValue(value: any, type: string): string {
     return "-"
   }
 
+  // Handle arrays (e.g., multi-select or repeated fields)
+  if (Array.isArray(value)) {
+    if (value.length === 0) {
+      return "-"
+    }
+    // Format array items
+    return value.map(item => {
+      if (typeof item === 'object' && item !== null) {
+        // For objects in array, try to find a displayable property
+        const displayValue = item.value || item.label || item.text || JSON.stringify(item)
+        return String(displayValue)
+      }
+      return String(item)
+    }).join(", ")
+  }
+
   switch (type) {
     case "CHECKBOX":
       return value ? "Ja" : "Nein"
@@ -266,6 +302,14 @@ function formatValue(value: any, type: string): string {
       } catch {
         return String(value)
       }
+    case "FILE":
+    case "IMAGE":
+    case "SIGNATURE":
+      // For base64 images/files, don't display the full base64 string
+      if (typeof value === 'string' && value.startsWith('data:')) {
+        return "[Datei/Bild]"
+      }
+      return String(value)
     default:
       return String(value)
   }

@@ -1,5 +1,6 @@
 package dev.montron.pm.integration;
 
+import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import com.fasterxml.jackson.annotation.JsonProperty;
 import com.fasterxml.jackson.databind.JsonNode;
 import dev.montron.pm.integration.config.FormApiConfigService;
@@ -285,7 +286,7 @@ public class FormBackendClient {
             String employeeUsername,
             Instant submittedAt,
             Boolean hasAttachments,
-            java.util.Map<String, Object> data,
+            com.fasterxml.jackson.databind.JsonNode data,  // Changed from Map to JsonNode to match mobile-app backend
             String status,
             String pdfUrl  // Presigned URL to download PDF from S3
     ) {}
@@ -310,6 +311,16 @@ public class FormBackendClient {
             java.util.List<FormField> fields
     ) {}
 
+    /**
+     * Field definitions can come from different sources:
+     * - The Form backend `/forms/{id}` endpoint (strict schema)
+     * - Embedded UI JSON in descriptions (mobile form builder), which may contain extra properties
+     *   like `key`, `helpText`, `binding`, `editable`, etc.
+     *
+     * We intentionally ignore unknown properties so we can still parse the core shape and
+     * (critically) keep the `id` aligned with submission `data` keys.
+     */
+    @JsonIgnoreProperties(ignoreUnknown = true)
     public record FormField(
             String id,
             String label,
